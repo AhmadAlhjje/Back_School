@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+storage
+storage-test
+tests
+src/generated
+.env
+.env.*
+!.env.example
+deploy/.env
+deploy/backups
+deploy/sites
+*.log

@@ -1,0 +1,11 @@
+# Normalize line endings: scripts must run on the Linux VPS.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+*.png binary
+*.jpg binary
+*.ttf binary
+*.woff2 binary
+*.jar binary
+*.mp4 binary

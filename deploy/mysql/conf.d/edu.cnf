@@ -1,0 +1,18 @@
+[mysqld]
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+default-time-zone = '+00:00'
+# The API connects with a small pool per process (API + worker).
+max_connections = 200
+# Size to roughly 50-60% of the RAM given to MySQL on the VPS.
+innodb_buffer_pool_size = 512M
+innodb_flush_log_at_trx_commit = 1
+# Binary logs enable point-in-time recovery between nightly dumps (see docs/backup.md).
+log_bin = mysql-bin
+binlog_expire_logs_seconds = 604800
+# Lets the application user create the append-only triggers on audit_logs (migrations).
+log_bin_trust_function_creators = 1
+skip-name-resolve
+
+[client]
+default-character-set = utf8mb4

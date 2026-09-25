@@ -1,0 +1,583 @@
+// Educational Institute Platform — database schema (MySQL 8 / MariaDB 10.4+)
+//
+// Conventions
+// - IDs: UUIDv7 stored as CHAR(36) (time-ordered, non-enumerable).
+// - Soft delete: `archivedAt` on every entity whose loss would be harmful. The application
+//   never hard-deletes these rows; archived rows are hidden from active views and restorable.
+// - Required relations use RESTRICT so nothing important can disappear through a cascade.
+//   Only purely technical rows (refresh tokens) cascade from their parent.
+// - Table/column names are snake_case in the database, camelCase in the client.
+//
+// See docs/database.md.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  runtime             = "nodejs"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  OWNER
+  STUDENT
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum StudentSource {
+  STAFF_CREATED
+  SELF_REGISTERED
+}
+
+enum DevicePlatform {
+  ANDROID
+  IOS
+}
+
+enum DeviceStatus {
+  ACTIVE
+  RESET
+}
+
+enum ClientPortal {
+  ADMIN_WEB
+  OWNER_WEB
+  STUDENT_APP
+}
+
+/// Processing pipeline state. Archival is tracked separately by `archivedAt`.
+enum VideoStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum UploadJobStatus {
+  UPLOADING
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum FileKind {
+  PDF
+  DOCUMENT
+  PRESENTATION
+  SPREADSHEET
+  ARCHIVE
+  IMAGE
+  OTHER
+}
+
+/// The level a file is attached to. Exactly one matching parent column is set
+/// (enforced by the CHECK constraint `files_scope_parent_check`).
+enum FileScope {
+  SUBJECT
+  TEACHER
+  TOPIC
+  SESSION
+}
+
+/// Why an access grant exists. Future subscriptions add `SUBSCRIPTION`.
+enum AccessSource {
+  MANUAL
+}
+
+enum NotificationType {
+  NEW_LESSON
+  NEW_VIDEO
+  NEW_FILE
+  ACCOUNT
+  SYSTEM
+}
+
+// ─────────────────────── Identity & accounts ───────────────────────
+
+/// Every account (super admin, institute owner, student). A student account is app-wide,
+/// not institute-scoped, so a future `institute_memberships` table can link it to many institutes.
+model User {
+  id                String     @id @default(uuid(7)) @db.Char(36)
+  role              UserRole
+  name              String     @db.VarChar(120)
+  /// Normalized digits with optional leading '+'. Unique across all accounts.
+  phone             String     @unique @db.VarChar(20)
+  passwordHash      String     @map("password_hash") @db.VarChar(255)
+  status            UserStatus @default(ACTIVE)
+  lastLoginAt       DateTime?  @map("last_login_at")
+  passwordChangedAt DateTime?  @map("password_changed_at")
+  archivedAt        DateTime?  @map("archived_at")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+
+  studentProfile        StudentProfile?
+  devices               Device[]
+  authSessions          AuthSession[]
+  subjectAccess         StudentSubjectAccess[]
+  teacherAccess         StudentTeacherAccess[]
+  offlineLicenses       OfflineLicense[]
+  notificationsReceived NotificationRecipient[]
+  notificationsSent     Notification[]
+  auditLogs             AuditLog[]
+
+  @@index([role, archivedAt, createdAt])
+  @@index([role, status])
+  @@index([name])
+  @@map("users")
+}
+
+model StudentProfile {
+  userId    String        @id @map("user_id") @db.Char(36)
+  source    StudentSource @default(STAFF_CREATED)
+  /// The student's current grade; used for defaults and filtering, never for authorization.
+  gradeId   String?       @map("grade_id") @db.Char(36)
+  notes     String?       @db.VarChar(500)
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  grade Grade? @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+
+  @@index([gradeId])
+  @@map("student_profiles")
+}
+
+// ─────────────────────── Devices & sessions ───────────────────────
+
+/// A student's device binding. At most one ACTIVE device per student, enforced by the
+/// unique nullable `active_student_id` (set while ACTIVE, NULL after reset).
+model Device {
+  id              String         @id @default(uuid(7)) @db.Char(36)
+  studentId       String         @map("student_id") @db.Char(36)
+  /// SHA-256 of the app-provided device identifier; the raw identifier is never stored.
+  identifierHash  String         @map("identifier_hash") @db.Char(64)
+  platform        DevicePlatform
+  model           String?        @db.VarChar(120)
+  osVersion       String?        @map("os_version") @db.VarChar(60)
+  appVersion      String?        @map("app_version") @db.VarChar(30)
+  status          DeviceStatus   @default(ACTIVE)
+  activeStudentId String?        @unique @map("active_student_id") @db.Char(36)
+  lastIp          String?        @map("last_ip") @db.VarChar(45)
+  firstSeenAt     DateTime       @default(now()) @map("first_seen_at")
+  lastSeenAt      DateTime       @default(now()) @map("last_seen_at")
+  resetAt         DateTime?      @map("reset_at")
+
+  student         User             @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  authSessions    AuthSession[]
+  offlineLicenses OfflineLicense[]
+
+  @@index([studentId, status])
+  @@index([status, lastSeenAt])
+  @@map("devices")
+}
+
+/// One login on one client. Every authenticated request verifies the session is live.
+model AuthSession {
+  id           String       @id @default(uuid(7)) @db.Char(36)
+  userId       String       @map("user_id") @db.Char(36)
+  deviceId     String?      @map("device_id") @db.Char(36)
+  portal       ClientPortal
+  ipAddress    String?      @map("ip_address") @db.VarChar(45)
+  userAgent    String?      @map("user_agent") @db.VarChar(255)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  lastSeenAt   DateTime     @default(now()) @map("last_seen_at")
+  /// Absolute lifetime; refresh cannot extend a session past this point.
+  expiresAt    DateTime     @map("expires_at")
+  revokedAt    DateTime?    @map("revoked_at")
+  revokeReason String?      @map("revoke_reason") @db.VarChar(40)
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  device        Device?        @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  refreshTokens RefreshToken[]
+
+  @@index([userId, revokedAt])
+  @@index([deviceId, revokedAt])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
+
+/// Rotating refresh tokens. Only the SHA-256 hash is stored. A token that was already
+/// rotated and is presented again signals theft and revokes the whole session.
+model RefreshToken {
+  id        String    @id @default(uuid(7)) @db.Char(36)
+  sessionId String    @map("session_id") @db.Char(36)
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at")
+  rotatedAt DateTime? @map("rotated_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  session AuthSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────── Catalog ───────────────────────────
+
+model Grade {
+  id          String    @id @default(uuid(7)) @db.Char(36)
+  name        String    @db.VarChar(120)
+  description String?   @db.VarChar(500)
+  sortOrder   Int       @default(0) @map("sort_order")
+  archivedAt  DateTime? @map("archived_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  subjects Subject[]
+  students StudentProfile[]
+
+  @@index([archivedAt, sortOrder])
+  @@map("grades")
+}
+
+model Subject {
+  id          String    @id @default(uuid(7)) @db.Char(36)
+  gradeId     String    @map("grade_id") @db.Char(36)
+  name        String    @db.VarChar(120)
+  description String?   @db.Text
+  sortOrder   Int       @default(0) @map("sort_order")
+  archivedAt  DateTime? @map("archived_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  grade         Grade                  @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  teachers      SubjectTeacher[]
+  files         ContentFile[]
+  studentAccess StudentSubjectAccess[]
+
+  @@index([gradeId, archivedAt, sortOrder])
+  @@index([name])
+  @@map("subjects")
+}
+
+/// Teachers have no account and no dashboard; the owner manages them and their content.
+model Teacher {
+  id          String    @id @default(uuid(7)) @db.Char(36)
+  name        String    @db.VarChar(120)
+  phone       String?   @db.VarChar(20)
+  description String?   @db.Text
+  /// Relative key inside private storage (served through the API, never directly).
+  imageKey    String?   @map("image_key") @db.VarChar(255)
+  archivedAt  DateTime? @map("archived_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  subjects SubjectTeacher[]
+
+  @@index([archivedAt, name])
+  @@map("teachers")
+}
+
+/// A teacher inside a subject — the teacher's independent content space in that subject.
+/// Topics hang off this row; student teacher-access is granted on this row.
+/// Unassigning archives the row, so the teacher's content is preserved and restorable.
+model SubjectTeacher {
+  id         String    @id @default(uuid(7)) @db.Char(36)
+  subjectId  String    @map("subject_id") @db.Char(36)
+  teacherId  String    @map("teacher_id") @db.Char(36)
+  sortOrder  Int       @default(0) @map("sort_order")
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  subject       Subject                @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  teacher       Teacher                @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  topics        Topic[]
+  files         ContentFile[]
+  studentAccess StudentTeacherAccess[]
+
+  @@unique([subjectId, teacherId])
+  @@index([teacherId])
+  @@index([subjectId, archivedAt, sortOrder])
+  @@map("subject_teachers")
+}
+
+/// "Research / Topic" inside a teacher's space (e.g. التفاضل).
+model Topic {
+  id               String    @id @default(uuid(7)) @db.Char(36)
+  subjectTeacherId String    @map("subject_teacher_id") @db.Char(36)
+  title            String    @db.VarChar(200)
+  description      String?   @db.Text
+  sortOrder        Int       @default(0) @map("sort_order")
+  archivedAt       DateTime? @map("archived_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  subjectTeacher SubjectTeacher @relation(fields: [subjectTeacherId], references: [id], onDelete: Restrict)
+  sessions       Session[]
+  files          ContentFile[]
+
+  @@index([subjectTeacherId, archivedAt, sortOrder])
+  @@index([title])
+  @@map("topics")
+}
+
+/// A class session (الجلسة) inside a topic. Holds any number of videos and files.
+model Session {
+  id          String    @id @default(uuid(7)) @db.Char(36)
+  topicId     String    @map("topic_id") @db.Char(36)
+  title       String    @db.VarChar(200)
+  description String?   @db.Text
+  sortOrder   Int       @default(0) @map("sort_order")
+  archivedAt  DateTime? @map("archived_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  topic  Topic         @relation(fields: [topicId], references: [id], onDelete: Restrict)
+  videos Video[]
+  files  ContentFile[]
+
+  @@index([topicId, archivedAt, sortOrder])
+  @@index([title])
+  @@map("sessions")
+}
+
+// ──────────────────────────── Media ────────────────────────────
+
+/// Video content metadata. The media itself lives in private storage (see VideoAsset).
+/// No artificial duration limit.
+model Video {
+  id              String      @id @default(uuid(7)) @db.Char(36)
+  sessionId       String      @map("session_id") @db.Char(36)
+  title           String      @db.VarChar(200)
+  description     String?     @db.Text
+  sortOrder       Int         @default(0) @map("sort_order")
+  status          VideoStatus @default(UPLOADING)
+  durationSeconds Int?        @map("duration_seconds")
+  readyAt         DateTime?   @map("ready_at")
+  archivedAt      DateTime?   @map("archived_at")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  session         Session          @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  asset           VideoAsset?
+  uploadJobs      UploadJob[]
+  offlineLicenses OfflineLicense[]
+
+  @@index([sessionId, archivedAt, sortOrder])
+  @@index([status, updatedAt])
+  @@index([title])
+  @@map("videos")
+}
+
+/// Technical HLS output for a READY video. Never exposed to clients.
+model VideoAsset {
+  videoId                String   @id @map("video_id") @db.Char(36)
+  /// Relative storage directory containing master.m3u8, variant playlists and segments.
+  storageKey             String   @map("storage_key") @db.VarChar(255)
+  /// AES-128 content key, encrypted at rest with AES-256-GCM (MEDIA_KEY_ENCRYPTION_KEY).
+  encryptedKey           String   @map("encrypted_key") @db.VarChar(255)
+  /// [{ name, width, height, bandwidth }]
+  renditions             Json
+  segmentDurationSeconds Int      @map("segment_duration_seconds")
+  sizeBytes              BigInt   @map("size_bytes")
+  sourceWidth            Int?     @map("source_width")
+  sourceHeight           Int?     @map("source_height")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Restrict)
+
+  @@map("video_assets")
+}
+
+/// One upload attempt of a video and its background processing lifecycle.
+model UploadJob {
+  id               String          @id @default(uuid(7)) @db.Char(36)
+  videoId          String          @map("video_id") @db.Char(36)
+  status           UploadJobStatus @default(UPLOADING)
+  originalFileName String          @map("original_file_name") @db.VarChar(255)
+  mimeType         String          @map("mime_type") @db.VarChar(100)
+  sizeBytes        BigInt          @map("size_bytes")
+  chunkSize        Int             @map("chunk_size")
+  totalChunks      Int             @map("total_chunks")
+  attempts         Int             @default(0)
+  /// Internal diagnostic only — never shown to dashboard users.
+  errorMessage     String?         @map("error_message") @db.VarChar(1000)
+  uploadedAt       DateTime?       @map("uploaded_at")
+  startedAt        DateTime?       @map("started_at")
+  finishedAt       DateTime?       @map("finished_at")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Restrict)
+
+  @@index([videoId, createdAt])
+  @@index([status, updatedAt])
+  @@map("upload_jobs")
+}
+
+/// Downloadable educational files (PDF, Office, ZIP, images...) attached at one level.
+model ContentFile {
+  id               String    @id @default(uuid(7)) @db.Char(36)
+  scope            FileScope
+  subjectId        String?   @map("subject_id") @db.Char(36)
+  subjectTeacherId String?   @map("subject_teacher_id") @db.Char(36)
+  topicId          String?   @map("topic_id") @db.Char(36)
+  sessionId        String?   @map("session_id") @db.Char(36)
+  title            String    @db.VarChar(200)
+  kind             FileKind
+  originalFileName String    @map("original_file_name") @db.VarChar(255)
+  mimeType         String    @map("mime_type") @db.VarChar(100)
+  extension        String    @db.VarChar(10)
+  sizeBytes        BigInt    @map("size_bytes")
+  storageKey       String    @map("storage_key") @db.VarChar(255)
+  sha256           String    @db.Char(64)
+  sortOrder        Int       @default(0) @map("sort_order")
+  archivedAt       DateTime? @map("archived_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  subject        Subject?        @relation(fields: [subjectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  subjectTeacher SubjectTeacher? @relation(fields: [subjectTeacherId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  topic          Topic?          @relation(fields: [topicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  session        Session?        @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([subjectId, archivedAt, sortOrder])
+  @@index([subjectTeacherId, archivedAt, sortOrder])
+  @@index([topicId, archivedAt, sortOrder])
+  @@index([sessionId, archivedAt, sortOrder])
+  @@index([title])
+  @@map("files")
+}
+
+// ─────────────────────────── Access ───────────────────────────
+
+/// Subject is open for a student. Active = revokedAt IS NULL AND (expiresAt IS NULL OR > now).
+model StudentSubjectAccess {
+  id        String       @id @default(uuid(7)) @db.Char(36)
+  studentId String       @map("student_id") @db.Char(36)
+  subjectId String       @map("subject_id") @db.Char(36)
+  source    AccessSource @default(MANUAL)
+  grantedAt DateTime     @default(now()) @map("granted_at")
+  expiresAt DateTime?    @map("expires_at")
+  revokedAt DateTime?    @map("revoked_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  student User    @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+
+  @@unique([studentId, subjectId])
+  @@index([subjectId, revokedAt])
+  @@map("student_subject_access")
+}
+
+/// A teacher is open for a student *within a subject*. Grants everything under that
+/// teacher's space — current and future topics, sessions, videos and files.
+model StudentTeacherAccess {
+  id               String       @id @default(uuid(7)) @db.Char(36)
+  studentId        String       @map("student_id") @db.Char(36)
+  subjectTeacherId String       @map("subject_teacher_id") @db.Char(36)
+  source           AccessSource @default(MANUAL)
+  grantedAt        DateTime     @default(now()) @map("granted_at")
+  expiresAt        DateTime?    @map("expires_at")
+  revokedAt        DateTime?    @map("revoked_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  student        User           @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  subjectTeacher SubjectTeacher @relation(fields: [subjectTeacherId], references: [id], onDelete: Restrict)
+
+  @@unique([studentId, subjectTeacherId])
+  @@index([subjectTeacherId, revokedAt])
+  @@map("student_teacher_access")
+}
+
+/// Permission for a bound device to keep an encrypted copy of a video for offline playback.
+model OfflineLicense {
+  id        String    @id @default(uuid(7)) @db.Char(36)
+  studentId String    @map("student_id") @db.Char(36)
+  deviceId  String    @map("device_id") @db.Char(36)
+  videoId   String    @map("video_id") @db.Char(36)
+  issuedAt  DateTime  @default(now()) @map("issued_at")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  student User   @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  device  Device @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  video   Video  @relation(fields: [videoId], references: [id], onDelete: Restrict)
+
+  @@index([studentId, deviceId, revokedAt])
+  @@index([videoId])
+  @@map("offline_licenses")
+}
+
+// ─────────────────────── Notifications ───────────────────────
+
+model Notification {
+  id          String           @id @default(uuid(7)) @db.Char(36)
+  type        NotificationType
+  title       String           @db.VarChar(200)
+  body        String           @db.VarChar(1000)
+  /// Deep-link context, e.g. { subjectId, subjectTeacherId, sessionId, videoId }.
+  data        Json?
+  createdById String?          @map("created_by_id") @db.Char(36)
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  createdBy  User?                   @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  recipients NotificationRecipient[]
+
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model NotificationRecipient {
+  id             String    @id @default(uuid(7)) @db.Char(36)
+  notificationId String    @map("notification_id") @db.Char(36)
+  userId         String    @map("user_id") @db.Char(36)
+  readAt         DateTime? @map("read_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Restrict)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([notificationId, userId])
+  @@index([userId, readAt, createdAt])
+  @@map("notification_recipients")
+}
+
+// ─────────────────────── Audit & settings ───────────────────────
+
+/// Append-only. The application exposes no update or delete path for audit rows.
+model AuditLog {
+  id         String    @id @default(uuid(7)) @db.Char(36)
+  actorId    String?   @map("actor_id") @db.Char(36)
+  actorRole  UserRole? @map("actor_role")
+  action     String    @db.VarChar(60)
+  entityType String?   @map("entity_type") @db.VarChar(60)
+  entityId   String?   @map("entity_id") @db.VarChar(64)
+  ipAddress  String?   @map("ip_address") @db.VarChar(45)
+  userAgent  String?   @map("user_agent") @db.VarChar(255)
+  metadata   Json?
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+/// Typed key/value system settings managed by the super admin (schema lives in code).
+model SystemSetting {
+  key       String   @id @db.VarChar(80)
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}

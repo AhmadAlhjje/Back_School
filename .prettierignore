@@ -1,0 +1,6 @@
+dist
+src/generated
+storage
+coverage
+storage-test
+tests/.fixtures
