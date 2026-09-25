@@ -1,4 +1,4 @@
-# Backend on a VPS: MariaDB, Redis, database migrations, API (port 6000), video worker, backups.
+# Backend on a VPS: MariaDB, Redis, database migrations, API (port 6003), video worker, backups.
 # Run in this folder (step by step: docs/deployment.md):
 #
 #   bash docker/init-env.sh          # once: writes .env (random passwords + the first super admin)
@@ -14,7 +14,7 @@ x-backend-env: &backend-env
   NODE_ENV: production
   PORT: 6000
   # Address the student app uses; the video/file links the API hands out start with it.
-  API_BASE_URL: http://${SERVER_ADDRESS:?set SERVER_ADDRESS in .env}:${API_PORT:-6000}
+  API_BASE_URL: http://${SERVER_ADDRESS:?set SERVER_ADDRESS in .env}:${API_PORT:-6003}
   CORS_ORIGINS: http://${SERVER_ADDRESS}:${OWNER_DASHBOARD_PORT:-6001},http://${SERVER_ADDRESS}:${ADMIN_DASHBOARD_PORT:-6002}
   # The dashboards' Nginx (private Docker addresses) passes on the real client address.
   TRUST_PROXY: uniquelocal
@@ -129,7 +129,7 @@ services:
     environment: *backend-env
     command: ['node', 'dist/server.js']
     ports:
-      - '${API_PORT:-6000}:6000'
+      - '${API_PORT:-6003}:6000'
     volumes:
       - media:/var/lib/edu/storage
     depends_on:
