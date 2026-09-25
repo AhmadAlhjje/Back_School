@@ -406,6 +406,8 @@ model UploadJob {
   chunkSize        Int             @map("chunk_size")
   totalChunks      Int             @map("total_chunks")
   attempts         Int             @default(0)
+  /// Server-side preparation of the video (0-100), shown to staff while they wait.
+  progressPercent  Int             @default(0) @map("progress_percent")
   /// Internal diagnostic only — never shown to dashboard users.
   errorMessage     String?         @map("error_message") @db.VarChar(1000)
   uploadedAt       DateTime?       @map("uploaded_at")

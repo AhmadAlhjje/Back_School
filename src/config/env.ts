@@ -74,13 +74,13 @@ const envSchema = z.object({
   MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).max(4096).default(200),
   KEEP_ORIGINAL_VIDEOS: booleanFromString.default(false),
   HLS_RENDITIONS: csv
-    .default(['360', '720', '1080'])
+    .default(['360', '720'])
     .transform((values) => values.map(Number))
     .pipe(z.array(z.number().int().min(144).max(2160)).min(1)),
   HLS_SEGMENT_SECONDS: z.coerce.number().int().min(2).max(12).default(6),
   FFMPEG_PRESET: z
     .enum(['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow'])
-    .default('veryfast'),
+    .default('superfast'),
   VIDEO_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(1),
   MEDIA_ACCEL_REDIRECT: booleanFromString.default(false),
   MEDIA_ACCEL_PREFIX: z.string().startsWith('/').default('/protected-media'),

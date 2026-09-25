@@ -70,22 +70,23 @@ Exact statuses: `src/core/errors/error-codes.ts`.
 
 ### Authentication
 
-| Method | Path                            | Access                    | Purpose                                                                                       |
-| ------ | ------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------- |
-| POST   | `/api/v1/auth/admin/login`      | public                    | Super admin login (sets the admin refresh cookie)                                             |
-| POST   | `/api/v1/auth/owner/login`      | public                    | Institute owner login (sets the owner refresh cookie)                                         |
-| POST   | `/api/v1/auth/student/login`    | public                    | Student login from the app; binds the device on first login                                   |
-| POST   | `/api/v1/auth/student/register` | public                    | Student self-registration (on by default; the super admin can turn it off in system settings) |
-| POST   | `/api/v1/auth/refresh`          | public                    | Rotate the refresh token and get a new access token                                           |
-| POST   | `/api/v1/auth/logout`           | SUPER_ADMIN/OWNER/STUDENT | Revoke the current session                                                                    |
-| GET    | `/api/v1/auth/me`               | SUPER_ADMIN/OWNER/STUDENT | Current account                                                                               |
-| POST   | `/api/v1/auth/change-password`  | SUPER_ADMIN/OWNER/STUDENT | Change own password (revokes all other sessions)                                              |
+| Method | Path                            | Access                    | Purpose                                                                                                                 |
+| ------ | ------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/v1/auth/admin/login`      | public                    | Super admin login (sets the admin refresh cookie)                                                                       |
+| POST   | `/api/v1/auth/owner/login`      | public                    | Institute owner login (sets the owner refresh cookie)                                                                   |
+| POST   | `/api/v1/auth/student/login`    | public                    | Student login from the app; binds the device on first login                                                             |
+| POST   | `/api/v1/auth/student/register` | public                    | Student self-registration with the chosen `gradeId` (on by default; the super admin can turn it off in system settings) |
+| POST   | `/api/v1/auth/refresh`          | public                    | Rotate the refresh token and get a new access token                                                                     |
+| POST   | `/api/v1/auth/logout`           | SUPER_ADMIN/OWNER/STUDENT | Revoke the current session                                                                                              |
+| GET    | `/api/v1/auth/me`               | SUPER_ADMIN/OWNER/STUDENT | Current account                                                                                                         |
+| POST   | `/api/v1/auth/change-password`  | SUPER_ADMIN/OWNER/STUDENT | Change own password (revokes all other sessions)                                                                        |
 
 ### Public
 
-| Method | Path                    | Access | Purpose                                                                 |
-| ------ | ----------------------- | ------ | ----------------------------------------------------------------------- |
-| GET    | `/api/v1/public/config` | public | Public client configuration (institute name, registration availability) |
+| Method | Path                    | Access | Purpose                                                                         |
+| ------ | ----------------------- | ------ | ------------------------------------------------------------------------------- |
+| GET    | `/api/v1/public/config` | public | Public client configuration (institute name, registration availability)         |
+| GET    | `/api/v1/public/grades` | public | Active grades (id, name) for the grade choice when a student creates an account |
 
 ### Super admin: settings and owner account
 
@@ -203,33 +204,34 @@ Exact statuses: `src/core/errors/error-codes.ts`.
 
 ### Videos and uploads
 
-| Method | Path                                      | Access            | Purpose                                                 |
-| ------ | ----------------------------------------- | ----------------- | ------------------------------------------------------- |
-| GET    | `/api/v1/videos`                          | SUPER_ADMIN/OWNER | List the videos of a session                            |
-| POST   | `/api/v1/videos`                          | SUPER_ADMIN/OWNER | Create a video and start a chunked upload               |
-| PUT    | `/api/v1/videos/reorder`                  | SUPER_ADMIN/OWNER | Reorder the videos of a session                         |
-| GET    | `/api/v1/videos/:id`                      | SUPER_ADMIN/OWNER | Get a video                                             |
-| PATCH  | `/api/v1/videos/:id`                      | SUPER_ADMIN/OWNER | Rename / update a video                                 |
-| POST   | `/api/v1/videos/:id/archive`              | SUPER_ADMIN/OWNER | Archive a video                                         |
-| POST   | `/api/v1/videos/:id/restore`              | SUPER_ADMIN/OWNER | Restore a video                                         |
-| GET    | `/api/v1/videos/:id/upload`               | SUPER_ADMIN/OWNER | Upload status and received chunk indexes (for resuming) |
-| PUT    | `/api/v1/videos/:id/upload/chunks/:index` | SUPER_ADMIN/OWNER | Upload one chunk (raw bytes, application/octet-stream)  |
-| POST   | `/api/v1/videos/:id/upload/complete`      | SUPER_ADMIN/OWNER | Finish the upload and queue processing                  |
-| POST   | `/api/v1/videos/:id/upload/restart`       | SUPER_ADMIN/OWNER | Start a new upload for a failed or abandoned video      |
-| POST   | `/api/v1/videos/:id/preview`              | SUPER_ADMIN/OWNER | Temporary playback URL for staff preview                |
+| Method | Path                                      | Access            | Purpose                                                                             |
+| ------ | ----------------------------------------- | ----------------- | ----------------------------------------------------------------------------------- |
+| GET    | `/api/v1/videos`                          | SUPER_ADMIN/OWNER | List the videos of a session                                                        |
+| POST   | `/api/v1/videos`                          | SUPER_ADMIN/OWNER | Create a video and start a chunked upload                                           |
+| PUT    | `/api/v1/videos/reorder`                  | SUPER_ADMIN/OWNER | Reorder the videos of a session                                                     |
+| GET    | `/api/v1/videos/:id`                      | SUPER_ADMIN/OWNER | Get a video                                                                         |
+| PATCH  | `/api/v1/videos/:id`                      | SUPER_ADMIN/OWNER | Rename / update a video                                                             |
+| POST   | `/api/v1/videos/:id/archive`              | SUPER_ADMIN/OWNER | Archive a video                                                                     |
+| POST   | `/api/v1/videos/:id/restore`              | SUPER_ADMIN/OWNER | Restore a video                                                                     |
+| GET    | `/api/v1/videos/:id/upload`               | SUPER_ADMIN/OWNER | Upload status and received chunk indexes (for resuming)                             |
+| PUT    | `/api/v1/videos/:id/upload/chunks/:index` | SUPER_ADMIN/OWNER | Upload one chunk (raw bytes, application/octet-stream) — bearer or `X-Upload-Token` |
+| POST   | `/api/v1/videos/:id/upload/complete`      | SUPER_ADMIN/OWNER | Finish the upload and queue processing — bearer or `X-Upload-Token`                 |
+| POST   | `/api/v1/videos/:id/upload/restart`       | SUPER_ADMIN/OWNER | Start a new upload for a failed or abandoned video                                  |
+| POST   | `/api/v1/videos/:id/preview`              | SUPER_ADMIN/OWNER | Temporary playback URL for staff preview                                            |
 
 ### Files
 
-| Method | Path                         | Access            | Purpose                                                                |
-| ------ | ---------------------------- | ----------------- | ---------------------------------------------------------------------- |
-| GET    | `/api/v1/files`              | SUPER_ADMIN/OWNER | List the files attached to a subject / teacher space / topic / session |
-| POST   | `/api/v1/files`              | SUPER_ADMIN/OWNER | Upload a file (multipart field `file`, optional field `title`)         |
-| PUT    | `/api/v1/files/reorder`      | SUPER_ADMIN/OWNER | Reorder files of one parent                                            |
-| GET    | `/api/v1/files/:id`          | SUPER_ADMIN/OWNER | Get file metadata                                                      |
-| PATCH  | `/api/v1/files/:id`          | SUPER_ADMIN/OWNER | Rename a file                                                          |
-| POST   | `/api/v1/files/:id/archive`  | SUPER_ADMIN/OWNER | Delete (archive) a file — recoverable                                  |
-| POST   | `/api/v1/files/:id/restore`  | SUPER_ADMIN/OWNER | Restore an archived file                                               |
-| GET    | `/api/v1/files/:id/download` | SUPER_ADMIN/OWNER | Download a file (staff)                                                |
+| Method | Path                         | Access            | Purpose                                                                                                                           |
+| ------ | ---------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/v1/files`              | SUPER_ADMIN/OWNER | List the files attached to a subject / teacher space / topic / session                                                            |
+| POST   | `/api/v1/files`              | SUPER_ADMIN/OWNER | Upload a file (multipart field `file`, optional field `title`); body may be gzip (`Content-Encoding`); bearer or `X-Upload-Token` |
+| POST   | `/api/v1/files/upload-token` | SUPER_ADMIN/OWNER | Upload token for new files in one place (`?scope=&parentId=`), for background uploads                                             |
+| PUT    | `/api/v1/files/reorder`      | SUPER_ADMIN/OWNER | Reorder files of one parent                                                                                                       |
+| GET    | `/api/v1/files/:id`          | SUPER_ADMIN/OWNER | Get file metadata                                                                                                                 |
+| PATCH  | `/api/v1/files/:id`          | SUPER_ADMIN/OWNER | Rename a file                                                                                                                     |
+| POST   | `/api/v1/files/:id/archive`  | SUPER_ADMIN/OWNER | Delete (archive) a file — recoverable                                                                                             |
+| POST   | `/api/v1/files/:id/restore`  | SUPER_ADMIN/OWNER | Restore an archived file                                                                                                          |
+| GET    | `/api/v1/files/:id/download` | SUPER_ADMIN/OWNER | Download a file (staff)                                                                                                           |
 
 ### Access control
 

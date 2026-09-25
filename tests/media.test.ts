@@ -5,8 +5,15 @@ import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '../src/core/database/prisma.js';
 import { getMemoryQueues } from '../src/core/queue/queues.js';
+import { openSecret } from '../src/core/security/crypto.js';
 import { resolveStorageKey } from '../src/core/storage/storage.js';
 import { clearMediaGuardCache } from '../src/modules/media/media-guard.js';
+import {
+  buildHlsArgs,
+  copyableRendition,
+  planRenditions,
+  type ProbeResult,
+} from '../src/workers/video/ffmpeg.js';
 import { markVideoFailed, PermanentVideoError, processVideoJob } from '../src/workers/video/process-video.js';
 import { createCatalog, grantSubject, grantTeacher } from './helpers/factories.js';
 import { api, authHeaders, staff, student, type StaffSession } from './helpers/http.js';
@@ -78,6 +85,136 @@ async function uploadSample(
     totalChunks: upload.totalChunks as number,
   };
 }
+
+/** Decrypts the first segment of a stored rendition and asks ffprobe what is inside. */
+function probeStoredSegment(storageKeyOfAsset: string, encryptedKey: string, variant: string) {
+  const playlist = fs.readFileSync(resolveStorageKey(`${storageKeyOfAsset}/${variant}/index.m3u8`), 'utf8');
+  const iv = Buffer.from(/IV=0x([0-9a-fA-F]+)/.exec(playlist)![1]!, 'hex');
+  const segment = fs.readFileSync(resolveStorageKey(`${storageKeyOfAsset}/${variant}/seg_00000.ts`));
+  const decipher = createDecipheriv('aes-128-cbc', openSecret(encryptedKey), iv);
+  const clear = path.join(FIXTURE_DIR, `probe-${variant}.ts`);
+  fs.writeFileSync(clear, Buffer.concat([decipher.update(segment), decipher.final()]));
+  const out = execFileSync('ffprobe', [
+    '-v',
+    'error',
+    '-select_streams',
+    'v:0',
+    '-show_entries',
+    'stream=codec_name,profile,height,avg_frame_rate',
+    '-of',
+    'json',
+    clear,
+  ]).toString();
+  return (JSON.parse(out) as { streams: { profile: string; height: number; avg_frame_rate: string }[] })
+    .streams[0]!;
+}
+
+describe('faster processing', () => {
+  const probe = (overrides: Partial<ProbeResult>): ProbeResult => ({
+    durationSeconds: 60,
+    width: 1920,
+    height: 1080,
+    hasAudio: true,
+    videoCodec: 'h264',
+    videoProfile: 'High',
+    pixelFormat: 'yuv420p',
+    videoBitrateKbps: 3000,
+    frameRate: 30,
+    ...overrides,
+  });
+  const ladder = planRenditions(1080, [360, 720, 1080]);
+
+  it('takes the largest rendition from a suitable upload as it is', () => {
+    expect(copyableRendition(probe({}), ladder)).toBe(2);
+    expect(copyableRendition(probe({ videoCodec: 'hevc' }), ladder)).toBe(-1);
+    expect(copyableRendition(probe({ videoBitrateKbps: 15000 }), ladder)).toBe(-1); // phone recording
+    expect(copyableRendition(probe({ pixelFormat: 'yuv420p10le' }), ladder)).toBe(-1);
+    expect(copyableRendition(probe({ height: 1088 }), ladder)).toBe(-1);
+  });
+
+  it('encodes the other renditions, at 30 fps when the source is 60', () => {
+    const args = buildHlsArgs({
+      inputPath: 'in.mp4',
+      outputDir: 'out',
+      keyInfoPath: 'key.info',
+      renditions: ladder,
+      copyIndex: 2,
+      sourceFrameRate: 59.94,
+      hasAudio: true,
+      segmentSeconds: 6,
+      preset: 'superfast',
+      durationSeconds: 60,
+    });
+    const filter = args[args.indexOf('-filter_complex') + 1];
+    expect(filter).toContain('fps=30,split=2');
+    expect(args.join(' ')).toContain('-map 0:v:0 -c:v:2 copy');
+    expect(args.filter((arg) => arg === 'libx264')).toHaveLength(2);
+  });
+
+  it('processes an already-compressed upload without re-encoding its size (real FFmpeg)', async () => {
+    const source = path.join(FIXTURE_DIR, 'compressed-360.mp4');
+    if (!fs.existsSync(source)) {
+      // What the dashboard's browser compression produces: H.264 High, key frame every 2 s.
+      execFileSync('ffmpeg', [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=duration=6:size=640x360:rate=30',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=330:duration=6',
+        '-c:v',
+        'libx264',
+        '-profile:v',
+        'high',
+        '-b:v',
+        '500k',
+        '-g',
+        '60',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-shortest',
+        source,
+      ]);
+    }
+    const catalog = await createCatalog();
+    const owner = await staff('OWNER');
+    const { videoId, uploadId } = await uploadSample(
+      owner,
+      catalog.session.id,
+      fs.readFileSync(source),
+      'lesson.mp4',
+    );
+    await api().post(`/api/v1/videos/${videoId}/upload/complete`).set(authHeaders(owner));
+
+    // While it waits and while it is prepared, the dashboard sees how far it is.
+    const queued = await api().get(`/api/v1/videos/${videoId}`).set(authHeaders(owner));
+    expect(queued.body.data.upload.preparingPercent).toBe(0);
+    expect(await processVideoJob(uploadId)).toBe('processed');
+
+    const video = await prisma.video.findUniqueOrThrow({ where: { id: videoId }, include: { asset: true } });
+    expect(video.status).toBe('READY');
+    const job = await prisma.uploadJob.findUniqueOrThrow({ where: { id: uploadId } });
+    expect(job.progressPercent).toBe(100);
+    const done = await api().get(`/api/v1/videos/${videoId}`).set(authHeaders(owner));
+    expect(done.body.data.upload.preparingPercent).toBeNull();
+
+    // 360p (= the source) was copied: still the source's High profile. 240p was encoded by the
+    // server (with the test preset `ultrafast`, x264 signals the simplest profile).
+    const copied = probeStoredSegment(video.asset!.storageKey, video.asset!.encryptedKey, 'v1');
+    expect(copied).toMatchObject({ height: 360, profile: 'High' });
+    const encoded = probeStoredSegment(video.asset!.storageKey, video.asset!.encryptedKey, 'v0');
+    expect(encoded.height).toBe(240);
+    expect(encoded.profile).not.toBe('High');
+  }, 120_000);
+});
 
 describe('video pipeline (real FFmpeg)', () => {
   it('uploads in chunks, processes to encrypted HLS, and plays back only for authorized students', async () => {

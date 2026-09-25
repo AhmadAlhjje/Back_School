@@ -2,7 +2,7 @@ import { Router, type Request, type RequestHandler, type Response } from 'expres
 import type { z } from 'zod';
 import type { UserRole } from '../../generated/prisma/enums.js';
 import type { AuthContext } from '../auth/auth-context.js';
-import { authenticate, authorize } from '../auth/authenticate.js';
+import { authenticate, authenticateUpload, authorize } from '../auth/authenticate.js';
 import { AppError } from '../errors/app-error.js';
 
 /**
@@ -34,6 +34,11 @@ interface SpecBase<P extends Schema, Q extends Schema, B extends Schema> {
   bodyKind?: BodyKind;
   /** Extra middleware run after authorization and before validation (e.g. rate limiters). */
   middleware?: RequestHandler[];
+  /**
+   * Upload routes: the target an upload token must name (e.g. `video:<id>`). Such a route also
+   * accepts that token instead of the bearer token (background uploads, see upload-token.ts).
+   */
+  uploadTarget?: (req: Request) => string;
   successStatus?: number;
 }
 
@@ -125,7 +130,12 @@ export function route<
     body: spec.body,
     bodyKind: spec.bodyKind ?? 'json',
     successStatus: spec.successStatus ?? 200,
-    handlers: [authenticate, authorize(spec.roles), ...(spec.middleware ?? []), run],
+    handlers: [
+      spec.uploadTarget ? authenticateUpload(spec.uploadTarget) : authenticate,
+      authorize(spec.roles),
+      ...(spec.middleware ?? []),
+      run,
+    ],
   };
 }
 

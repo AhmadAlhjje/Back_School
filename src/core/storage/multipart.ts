@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createGunzip } from 'node:zlib';
 import type { Request } from 'express';
 import busboy from 'busboy';
 import { AppError } from '../errors/app-error.js';
@@ -33,6 +34,9 @@ const MAX_FIELDS = 20;
  * Streams a single-file multipart upload straight to private temp storage while hashing it.
  * Never buffers the file in memory. Enforces size and type (extension + magic bytes);
  * any violation deletes the partial file and fails with a typed error.
+ *
+ * The dashboards may compress the body (`Content-Encoding: gzip`) to upload faster; it is
+ * decompressed while streaming, and the size limit applies to the decompressed file.
  */
 export async function receiveSingleFile(
   req: Request,
@@ -41,6 +45,10 @@ export async function receiveSingleFile(
   const contentType = req.headers['content-type'] ?? '';
   if (!contentType.startsWith('multipart/form-data')) {
     throw new AppError('VALIDATION_ERROR', { details: { reason: 'EXPECTED_MULTIPART' } });
+  }
+  const encoding = (req.headers['content-encoding'] ?? 'identity').trim().toLowerCase();
+  if (encoding !== 'identity' && encoding !== 'gzip') {
+    throw new AppError('VALIDATION_ERROR', { details: { reason: 'UNSUPPORTED_CONTENT_ENCODING' } });
   }
   await ensureStorageDir(StorageArea.uploads);
   const tempKey = storageKey(StorageArea.uploads, `${randomUUID()}.upload`);
@@ -51,6 +59,8 @@ export async function receiveSingleFile(
     let fileInfo: Omit<ReceivedFile, 'sizeBytes' | 'sha256'> | null = null;
     let fileDone: Promise<{ sizeBytes: number; sha256: string }> | null = null;
     let failure: AppError | null = null;
+    /** Stops writing the file being received (the request body turned out to be broken). */
+    let cutOffFile: (() => void) | null = null;
 
     const fail = (error: AppError) => {
       failure ??= error;
@@ -94,6 +104,19 @@ export async function receiveSingleFile(
           if (head.length < SIGNATURE_BYTES) head = Buffer.concat([head, chunk]).subarray(0, SIGNATURE_BYTES);
         });
         stream.on('limit', () => fail(new AppError('FILE_TOO_LARGE', { details: { maxBytes: options.maxBytes } })));
+        cutOffFile = () => {
+          stream.unpipe(out);
+          out.destroy();
+        };
+        // The body ended mid-file (client gone, broken compressed body): fail, never throw or hang.
+        stream.on('error', (error) => {
+          fail(new AppError('UPLOAD_FAILED', { cause: error }));
+          cutOffFile?.();
+        });
+        // Destroyed before finishing (cut off): settle anyway; `failure` makes the upload fail.
+        out.on('close', () => {
+          if (!out.writableFinished) resolveFile({ sizeBytes: size, sha256: '' });
+        });
         stream.pipe(out);
         out.on('finish', () => {
           if (size === 0) fail(new AppError('UPLOAD_FAILED', { details: { reason: 'EMPTY_FILE' } }));
@@ -129,7 +152,17 @@ export async function receiveSingleFile(
     });
 
     req.on('aborted', () => fail(new AppError('UPLOAD_FAILED', { details: { reason: 'CLIENT_ABORTED' } })));
-    req.pipe(parser);
+    if (encoding === 'gzip') {
+      const gunzip = createGunzip();
+      gunzip.on('error', () => {
+        fail(new AppError('UPLOAD_FAILED', { details: { reason: 'MALFORMED_GZIP' } }));
+        cutOffFile?.();
+        parser.destroy();
+      });
+      req.pipe(gunzip).pipe(parser);
+    } else {
+      req.pipe(parser);
+    }
   });
 }
 

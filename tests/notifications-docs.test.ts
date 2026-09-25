@@ -77,6 +77,7 @@ describe('API documentation and route contract', () => {
       [
         'get /api/v1/media/teachers/:teacherId/image',
         'get /api/v1/public/config',
+        'get /api/v1/public/grades',
         'post /api/v1/auth/admin/login',
         'post /api/v1/auth/owner/login',
         'post /api/v1/auth/refresh',

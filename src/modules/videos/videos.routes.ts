@@ -1,5 +1,8 @@
+import type { Request } from 'express';
 import { z } from 'zod';
 import { actorFromRequest } from '../../core/audit/audit.js';
+import type { AuthContext } from '../../core/auth/auth-context.js';
+import { signUploadToken, videoUploadTarget } from '../../core/auth/upload-token.js';
 import { route, type ApiModule } from '../../core/http/route.js';
 import { idParams, lifecycleFilter, name, optionalText, reorderBody, uuid } from '../../core/http/schemas.js';
 import { issueStaffPreview } from '../media/playback.service.js';
@@ -19,6 +22,13 @@ import {
   restoreVideo,
   updateVideo,
 } from './videos.service.js';
+
+/** Upload plans carry an upload token, so the dashboard can finish the upload in the background. */
+function withUploadToken<T extends { video: { id: string } }>(plan: T, auth: AuthContext) {
+  return { ...plan, ...signUploadToken(videoUploadTarget(plan.video.id), auth) };
+}
+
+const uploadTarget = (req: Request) => videoUploadTarget(String(req.params.id));
 
 const uploadPlan = z.object({
   fileName: z.string().trim().min(1).max(255),
@@ -43,11 +53,12 @@ export const videosModule: ApiModule = {
       path: '/',
       summary: 'Create a video and start a chunked upload',
       description:
-        'Returns the chunk plan (`chunkSize`, `totalChunks`). Upload each chunk with PUT .../upload/chunks/:index, then POST .../upload/complete.',
+        'Returns the chunk plan (`chunkSize`, `totalChunks`) and an `uploadToken`. Upload each chunk with PUT .../upload/chunks/:index, then POST .../upload/complete — with the bearer token, or with the upload token in `X-Upload-Token` (background uploads).',
       roles: STAFF_ROLES,
       body: uploadPlan.extend({ sessionId: uuid, title: name(200), description: optionalText(5000) }),
       successStatus: 201,
-      handler: ({ req, body }) => createVideoUpload(body, actorFromRequest(req)),
+      handler: async ({ req, auth, body }) =>
+        withUploadToken(await createVideoUpload(body, actorFromRequest(req)), auth),
     }),
     route({
       method: 'put',
@@ -105,13 +116,14 @@ export const videosModule: ApiModule = {
       summary: 'Upload status and received chunk indexes (for resuming)',
       roles: STAFF_ROLES,
       params: idParams,
-      handler: ({ params }) => getUploadStatus(params.id),
+      handler: async ({ auth, params }) => withUploadToken(await getUploadStatus(params.id), auth),
     }),
     route({
       method: 'put',
       path: '/:id/upload/chunks/:index',
       summary: 'Upload one chunk (raw bytes, application/octet-stream)',
       roles: STAFF_ROLES,
+      uploadTarget,
       params: idParams.extend({ index: z.coerce.number().int().min(0) }),
       bodyKind: 'binary',
       handler: ({ req, params }) =>
@@ -122,6 +134,7 @@ export const videosModule: ApiModule = {
       path: '/:id/upload/complete',
       summary: 'Finish the upload and queue processing',
       roles: STAFF_ROLES,
+      uploadTarget,
       params: idParams,
       handler: ({ req, params }) => completeUpload(params.id, actorFromRequest(req)),
     }),
@@ -132,7 +145,8 @@ export const videosModule: ApiModule = {
       roles: STAFF_ROLES,
       params: idParams,
       body: uploadPlan,
-      handler: ({ req, params, body }) => restartUpload(params.id, body, actorFromRequest(req)),
+      handler: async ({ req, auth, params, body }) =>
+        withUploadToken(await restartUpload(params.id, body, actorFromRequest(req)), auth),
     }),
     route({
       method: 'post',

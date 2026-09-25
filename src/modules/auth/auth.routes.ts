@@ -5,7 +5,7 @@ import { requestMeta } from '../../core/audit/audit.js';
 import { DEVICE_HEADER } from '../../core/auth/authenticate.js';
 import { AppError } from '../../core/errors/app-error.js';
 import { openRoute, route, type ApiModule } from '../../core/http/route.js';
-import { name } from '../../core/http/schemas.js';
+import { name, uuid } from '../../core/http/schemas.js';
 import { PASSWORD_MAX_LENGTH } from '../../core/security/password.js';
 import { phoneSchema } from '../../core/security/phone.js';
 import { rateLimiters } from '../../core/security/rate-limit.js';
@@ -118,8 +118,15 @@ export const authModule: ApiModule = {
       method: 'post',
       path: '/student/register',
       summary: 'Student self-registration (only when enabled in system settings)',
+      description: '`gradeId`: the grade the student chose (from GET /public/grades).',
       access: 'public',
-      body: z.object({ name: name(120), phone: phoneSchema, password, device: deviceInfoSchema }),
+      body: z.object({
+        name: name(120),
+        phone: phoneSchema,
+        password,
+        gradeId: uuid.optional(),
+        device: deviceInfoSchema,
+      }),
       middleware: [rateLimiters.register],
       successStatus: 201,
       handler: async ({ req, body }) => {

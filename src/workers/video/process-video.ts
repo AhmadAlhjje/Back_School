@@ -17,7 +17,7 @@ import {
   storageKey,
 } from '../../core/storage/storage.js';
 import { publishNotificationSafely } from '../../modules/notifications/notify.js';
-import { planRenditions, probeVideo, transcodeToHls } from './ffmpeg.js';
+import { copyableRendition, planRenditions, probeVideo, transcodeToHls } from './ffmpeg.js';
 
 /** A failure that retrying cannot fix (e.g. the upload is not a video). */
 export class PermanentVideoError extends Error {
@@ -79,8 +79,24 @@ export async function processVideoJob(
   const log = logger.child({ uploadJobId, videoId: job.videoId });
   await prisma.uploadJob.update({
     where: { id: job.id },
-    data: { status: 'PROCESSING', attempts: { increment: 1 }, startedAt: new Date(), errorMessage: null },
+    data: {
+      status: 'PROCESSING',
+      attempts: { increment: 1 },
+      startedAt: new Date(),
+      errorMessage: null,
+      progressPercent: 0,
+    },
   });
+  // Progress for the queue and, every 2%, for the dashboard ("preparing the video X%").
+  let savedPercent = 0;
+  const progress = async (percent: number) => {
+    await options.onProgress?.(percent);
+    if (percent - savedPercent < 2) return;
+    savedPercent = percent;
+    await prisma.uploadJob
+      .update({ where: { id: job.id }, data: { progressPercent: percent } })
+      .catch((error: unknown) => log.debug({ err: error }, 'Could not save the progress'));
+  };
   log.info('Video processing started');
 
   const extension = fileExtension(job.originalFileName) || 'mp4';
@@ -94,7 +110,7 @@ export async function processVideoJob(
 
   // 1. Assemble chunks.
   await assembleSource(job.id, job.totalChunks, Number(job.sizeBytes), sourcePath);
-  await options.onProgress?.(2);
+  await progress(2);
 
   // 2. Probe.
   let probe;
@@ -117,17 +133,30 @@ export async function processVideoJob(
 
   // 4. Transcode + segment + encrypt.
   const renditions = planRenditions(probe.height, config.media.renditionHeights);
+  const copyIndex = copyableRendition(probe, renditions);
+  log.info(
+    {
+      height: probe.height,
+      codec: probe.videoCodec,
+      kbps: probe.videoBitrateKbps,
+      fps: probe.frameRate,
+      copyIndex,
+    },
+    copyIndex >= 0 ? 'Largest rendition taken from the upload as it is' : 'All renditions encoded',
+  );
   await fs.mkdir(outputDir, { recursive: true });
   await transcodeToHls({
     inputPath: sourcePath,
     outputDir: outputDir.replace(/\\/g, '/'),
     keyInfoPath,
     renditions,
+    copyIndex,
+    sourceFrameRate: probe.frameRate,
     hasAudio: probe.hasAudio,
     segmentSeconds: config.media.segmentSeconds,
     preset: config.media.ffmpegPreset,
     durationSeconds: probe.durationSeconds,
-    onProgress: (percent) => void options.onProgress?.(Math.max(3, percent)),
+    onProgress: (percent) => void progress(Math.max(3, percent)),
     signal: options.signal,
   });
   await fs.rm(keyPath, { force: true });
@@ -169,7 +198,10 @@ export async function processVideoJob(
       where: { id: job.videoId },
       data: { status: 'READY', durationSeconds: Math.round(probe.durationSeconds), readyAt: new Date() },
     }),
-    prisma.uploadJob.update({ where: { id: job.id }, data: { status: 'COMPLETED', finishedAt: new Date() } }),
+    prisma.uploadJob.update({
+      where: { id: job.id },
+      data: { status: 'COMPLETED', finishedAt: new Date(), progressPercent: 100 },
+    }),
   ]);
   await options.onProgress?.(100);
   log.info(

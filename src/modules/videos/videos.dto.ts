@@ -35,6 +35,11 @@ export function toStaffVideoDto(video: Video & { uploadJobs?: UploadJob[] }) {
           sizeBytes: latestJob.sizeBytes,
           chunkSize: latestJob.chunkSize,
           totalChunks: latestJob.totalChunks,
+          // After the upload, the server prepares the video for students (0-100).
+          preparingPercent:
+            latestJob.status === 'QUEUED' || latestJob.status === 'PROCESSING'
+              ? latestJob.progressPercent
+              : null,
         }
       : null,
   };

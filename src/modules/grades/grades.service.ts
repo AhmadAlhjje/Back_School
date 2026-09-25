@@ -23,6 +23,15 @@ async function assertUniqueName(name: string, exceptId?: string) {
   if (clash) throw new AppError('CONFLICT', { details: { field: 'name' } });
 }
 
+/** Active grades as choices (student self-registration), in the owner's order. */
+export async function listGradeOptions() {
+  return prisma.grade.findMany({
+    where: { archivedAt: null },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    select: { id: true, name: true },
+  });
+}
+
 export async function listGrades(filter: { status: LifecycleFilter; search?: string }) {
   const grades = await prisma.grade.findMany({
     where: {

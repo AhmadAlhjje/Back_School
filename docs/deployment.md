@@ -135,6 +135,12 @@ and `COOKIE_SECURE=true` in `.env`; set `API_BASE_URL=https://…` in `flutter_a
 publish a new app build (release builds then allow no plain HTTP except the offline player's
 loopback).
 
+HTTPS also turns on two dashboard features browsers only allow on secure sites: compressing a
+video before upload, and uploads that go on after the site is closed (Chrome/Edge). Until then,
+the owner can enable them for the IP address on their own computer: open
+`chrome://flags/#unsafely-treat-insecure-origin-as-secure` (Edge: `edge://flags/...`), add
+`http://SERVER:6001,http://SERVER:6002`, choose **Enabled** and relaunch the browser.
+
 ## 8. Security checklist
 
 - [ ] `.env` created by `docker/init-env.sh` (random secrets, mode 600) and copied to a password manager.

@@ -41,6 +41,13 @@ screens, but they are never trusted.
   request. See [architecture.md §5](architecture.md#5-access-model-the-core-business-rule).
 - Students can only address their own data: student endpoints never take a student id.
 - Input validation with Zod on params, query and body; ids are validated before any query.
+- **Upload tokens** (background uploads): signed like media tokens but with their own audience,
+  valid 72 h for **one target** (`video:<id>` chunks + completion, or `files:<scope>:<parentId>`),
+  staff roles only, and accepted only by the routes of that target. Each request re-checks the
+  auth session behind the token (not revoked or expired, account active, role unchanged), so
+  signing out or disabling the account stops a background upload immediately.
+- Compressed file uploads (`Content-Encoding: gzip`) are decompressed while streaming; the size
+  limit and the extension/magic-byte checks apply to the decompressed file.
 
 ## 4. Media protection
 

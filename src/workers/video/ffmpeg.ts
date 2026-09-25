@@ -6,6 +6,15 @@ export interface ProbeResult {
   width: number;
   height: number;
   hasAudio: boolean;
+  /** e.g. `h264`, `hevc`. */
+  videoCodec: string;
+  /** e.g. `High`, `Main`, `High 10`. */
+  videoProfile: string;
+  pixelFormat: string;
+  /** Average video bitrate; 0 when unknown. */
+  videoBitrateKbps: number;
+  /** Average frames per second; 0 when unknown. */
+  frameRate: number;
 }
 
 export class MediaToolError extends Error {
@@ -55,9 +64,27 @@ function run(
   });
 }
 
+interface FfprobeStream {
+  codec_type?: string;
+  codec_name?: string;
+  profile?: string;
+  pix_fmt?: string;
+  width?: number;
+  height?: number;
+  duration?: string;
+  bit_rate?: string;
+  avg_frame_rate?: string;
+}
+
 interface FfprobeOutput {
-  format?: { duration?: string };
-  streams?: { codec_type?: string; width?: number; height?: number; duration?: string }[];
+  format?: { duration?: string; bit_rate?: string };
+  streams?: FfprobeStream[];
+}
+
+/** "30000/1001" → 29.97 */
+function parseRate(rate: string | undefined): number {
+  const [num, den] = (rate ?? '').split('/').map(Number);
+  return num && den ? num / den : 0;
 }
 
 export async function probeVideo(inputPath: string): Promise<ProbeResult | null> {
@@ -76,11 +103,20 @@ export async function probeVideo(inputPath: string): Promise<ProbeResult | null>
   );
   if (!video) return null;
   const duration = Number(data.format?.duration ?? video.duration ?? 0);
+  // The stream bitrate, or the whole file's minus a typical audio track.
+  const streamBps = Number(video.bit_rate ?? 0);
+  const formatBps = Number(data.format?.bit_rate ?? 0);
+  const videoBps = streamBps > 0 ? streamBps : Math.max(0, formatBps - 128_000);
   return {
     durationSeconds: Number.isFinite(duration) ? duration : 0,
     width: video.width!,
     height: video.height!,
     hasAudio: data.streams?.some((stream) => stream.codec_type === 'audio') ?? false,
+    videoCodec: video.codec_name ?? '',
+    videoProfile: video.profile ?? '',
+    pixelFormat: video.pix_fmt ?? '',
+    videoBitrateKbps: Number.isFinite(videoBps) ? Math.round(videoBps / 1000) : 0,
+    frameRate: parseRate(video.avg_frame_rate),
   };
 }
 
@@ -118,11 +154,38 @@ export function planRenditions(sourceHeight: number, configuredHeights: readonly
   });
 }
 
+/**
+ * The rendition that can take the source video as it is (no re-encoding), or -1.
+ *
+ * Re-encoding the largest quality is the slowest part of processing. When the upload already
+ * is what that rendition would be — H.264 (8-bit 4:2:0) at exactly its height and within its
+ * bitrate, as produced by the dashboards' in-browser compression — it is only cut into encrypted
+ * segments. Only the smaller renditions are encoded.
+ */
+export function copyableRendition(probe: ProbeResult, renditions: readonly Rendition[]): number {
+  if (probe.videoCodec !== 'h264') return -1;
+  if (probe.pixelFormat !== 'yuv420p' && probe.pixelFormat !== 'yuvj420p') return -1;
+  if (!['Constrained Baseline', 'Baseline', 'Main', 'High'].includes(probe.videoProfile)) return -1;
+  if (probe.frameRate <= 0 || probe.frameRate > 60.5) return -1;
+  const top = renditions.length - 1;
+  const rendition = renditions[top];
+  if (!rendition || rendition.height !== probe.height) return -1;
+  if (probe.videoBitrateKbps <= 0 || probe.videoBitrateKbps > rendition.videoBitrateKbps * 1.25) return -1;
+  return top;
+}
+
+/** Lessons do not need more than 30 frames per second: 60 fps sources are encoded at 30. */
+export const MAX_FRAME_RATE = 30;
+
 export interface HlsOptions {
   inputPath: string;
   outputDir: string;
   keyInfoPath: string;
   renditions: Rendition[];
+  /** Index of a rendition taken from the source as it is (see `copyableRendition`), or -1. */
+  copyIndex?: number;
+  /** The source frame rate (0 = unknown); above 30 the encoded renditions use 30. */
+  sourceFrameRate?: number;
   hasAudio: boolean;
   segmentSeconds: number;
   preset: string;
@@ -137,13 +200,25 @@ export interface HlsOptions {
  */
 export function buildHlsArgs(options: HlsOptions): string[] {
   const { renditions, segmentSeconds } = options;
-  const split = renditions.length;
+  const copyIndex = options.copyIndex ?? -1;
+  const encoded = renditions.map((_, i) => i).filter((i) => i !== copyIndex);
+  const fps = (options.sourceFrameRate ?? 0) > MAX_FRAME_RATE + 1 ? `fps=${MAX_FRAME_RATE},` : '';
   const filter =
-    `[0:v]split=${split}${renditions.map((_, i) => `[s${i}]`).join('')};` +
-    renditions.map((r, i) => `[s${i}]scale=-2:${r.height}:flags=bicubic,format=yuv420p[o${i}]`).join(';');
+    encoded.length === 0
+      ? null
+      : `[0:v]${fps}split=${encoded.length}${encoded.map((i) => `[s${i}]`).join('')};` +
+        encoded
+          .map((i) => `[s${i}]scale=-2:${renditions[i]!.height}:flags=bicubic,format=yuv420p[o${i}]`)
+          .join(';');
 
-  const args = ['-hide_banner', '-nostdin', '-y', '-i', options.inputPath, '-filter_complex', filter];
+  const args = ['-hide_banner', '-nostdin', '-y', '-i', options.inputPath];
+  if (filter) args.push('-filter_complex', filter);
   renditions.forEach((rendition, i) => {
+    if (i === copyIndex) {
+      // Already the right size and quality: only segmented and encrypted.
+      args.push('-map', '0:v:0', `-c:v:${i}`, 'copy');
+      return;
+    }
     const kbps = rendition.videoBitrateKbps;
     args.push(
       '-map',
@@ -156,6 +231,14 @@ export function buildHlsArgs(options: HlsOptions): string[] {
       `${Math.round(kbps * 1.07)}k`,
       `-bufsize:v:${i}`,
       `${kbps * 2}k`,
+      `-preset:v:${i}`,
+      options.preset,
+      `-profile:v:${i}`,
+      'main',
+      `-sc_threshold:v:${i}`,
+      '0',
+      `-force_key_frames:v:${i}`,
+      `expr:gte(t,n_forced*${segmentSeconds})`,
     );
   });
   if (options.hasAudio) {
@@ -173,14 +256,6 @@ export function buildHlsArgs(options: HlsOptions): string[] {
     });
   }
   args.push(
-    '-preset',
-    options.preset,
-    '-profile:v',
-    'main',
-    '-sc_threshold',
-    '0',
-    '-force_key_frames',
-    `expr:gte(t,n_forced*${segmentSeconds})`,
     '-f',
     'hls',
     '-hls_time',

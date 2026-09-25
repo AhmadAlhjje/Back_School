@@ -311,6 +311,39 @@ describe('student authentication and device binding', () => {
     expect(duplicate.body.error.code).toBe('PHONE_ALREADY_EXISTS');
   });
 
+  it('lets the student choose a grade from the public list when creating the account', async () => {
+    const first = await prisma.grade.create({ data: { name: 'التاسع', sortOrder: 2 } });
+    const second = await prisma.grade.create({ data: { name: 'البكالوريا', sortOrder: 1 } });
+    await prisma.grade.create({ data: { name: 'صف محذوف', sortOrder: 0, archivedAt: new Date() } });
+    const grades = await api().get('/api/v1/public/grades');
+    expect(grades.status).toBe(200);
+    expect(grades.body.data).toEqual([
+      { id: second.id, name: 'البكالوريا' },
+      { id: first.id, name: 'التاسع' },
+    ]);
+
+    const res = await api().post('/api/v1/auth/student/register').send({
+      name: 'طالب',
+      phone: '0955555555',
+      password: 'Student123',
+      gradeId: first.id,
+      device: newDevice(),
+    });
+    expect(res.status).toBe(201);
+    const profile = await prisma.studentProfile.findUnique({ where: { userId: res.body.data.user.id } });
+    expect(profile?.gradeId).toBe(first.id);
+
+    const unknown = await api().post('/api/v1/auth/student/register').send({
+      name: 'طالب',
+      phone: '0966666666',
+      password: 'Student123',
+      gradeId: '01900000-0000-7000-8000-000000000000',
+      device: newDevice(),
+    });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body.error.details).toMatchObject({ field: 'gradeId', reason: 'GRADE_NOT_FOUND' });
+  });
+
   it('rejects weak passwords on registration', async () => {
     const res = await api()
       .post('/api/v1/auth/student/register')

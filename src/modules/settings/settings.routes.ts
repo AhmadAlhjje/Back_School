@@ -1,5 +1,6 @@
 import { actorFromRequest } from '../../core/audit/audit.js';
 import { openRoute, route, type ApiModule } from '../../core/http/route.js';
+import { listGradeOptions } from '../grades/grades.service.js';
 import { getPublicConfig, getSettings, settingsUpdateSchema, updateSettings } from './settings.service.js';
 
 export const settingsModule: ApiModule = {
@@ -34,6 +35,13 @@ export const publicModule: ApiModule = {
       summary: 'Public client configuration (institute name, registration availability)',
       access: 'public',
       handler: () => getPublicConfig(),
+    }),
+    openRoute({
+      method: 'get',
+      path: '/grades',
+      summary: 'Active grades (id, name), for the grade choice when a student creates an account',
+      access: 'public',
+      handler: () => listGradeOptions(),
     }),
   ],
 };

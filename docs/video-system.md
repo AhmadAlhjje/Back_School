@@ -30,9 +30,27 @@ POST /videos/:id/upload/restart       → new upload for a failed/abandoned vide
   multi-hour lesson never sits in memory or in one giant HTTP request.
 - Wrong chunk sizes, out-of-range indexes, non-video extensions and oversize totals
   (`MAX_VIDEO_SIZE_GB`) are rejected. Uploads idle for 3 days are cancelled and cleaned up.
-- The dashboard upload manager sends chunks one after another, retries a failed chunk with
-  exponential backoff, resumes from the server's list of received chunks, and warns before the
-  page is closed while uploads are running.
+- The dashboard upload manager sends 4 chunks at a time (a long connection to the server is used
+  much better than with one request at a time), retries a failed chunk with exponential backoff,
+  resumes from the server's list of received chunks, and warns before the page is closed while
+  uploads are running in the page.
+
+### Before and after sending (dashboards)
+
+- **Compression in the browser** (optional, on by default): H.264 MP4, at most 720p and 30 fps,
+  ~1.8 Mbit/s, a key frame every 2 s, written to the browser's private disk storage — a 1080p phone
+  recording of ~13 Mbit/s uploads about 6× smaller, and the server keeps it as its 720p rendition
+  without re-encoding (see §3). Skipped (original uploaded) when the source is
+  already light, when a track (sound!) could not be kept, or when the result is not ≥15% smaller.
+  Uses WebCodecs: HTTPS sites (and localhost) only.
+- **Background upload**: every upload plan carries an `uploadToken` (72 h, this video only, this
+  auth session only — see [security.md](security.md) §3). The dashboard hands the missing chunks
+  to the browser (Background Fetch, Chrome/Edge on HTTPS); the upload goes on after the site is
+  closed, and the dashboard's service worker (`upload-sw.js`) calls `upload/complete` when every
+  chunk arrived. A later visit shows the progress. Elsewhere the upload runs in the page.
+- **Files** go the same way (`POST /files/upload-token`); photos are resized (longest side
+  2000 px) and PDF/TXT/old Office files are sent gzip-compressed — the server stores the original
+  bytes, so students receive exactly the uploaded file.
 
 ## 3. Processing (worker)
 
@@ -43,11 +61,24 @@ development) the API process runs the same handlers itself and resumes interrupt
 from the database when it restarts.
 
 1. **Assemble** chunks into one source file (private work dir).
-2. **Probe** with `ffprobe`: duration, resolution, audio presence.
+2. **Probe** with `ffprobe`: duration, resolution, audio, codec, profile, pixel format, bitrate,
+   frame rate.
 3. **Key**: 16 random bytes + random IV per video; the key file exists only in the work dir.
-4. **Transcode + segment + encrypt** in one FFmpeg run: H.264/AAC renditions from
-   `HLS_RENDITIONS` (default 360p/720p/1080p, never above the source height), `HLS_SEGMENT_SECONDS`
-   (default 6 s) segments, AES-128 via `-hls_key_info_file`, master playlist.
+4. **Transcode + segment + encrypt** in one FFmpeg run (decoded once): H.264/AAC renditions from
+   `HLS_RENDITIONS` (default 360p/720p, never above the source height), `HLS_SEGMENT_SECONDS`
+   (default 6 s) segments, AES-128 via `-hls_key_info_file`, master playlist. To keep long lessons
+   fast:
+   - **Copy instead of encode**: when the upload already is what the largest rendition would be
+     (H.264 8-bit 4:2:0, Baseline/Main/High, exactly its height, ≤ 1.25× its bitrate — what the
+     dashboards' browser compression produces), that rendition is only segmented and encrypted;
+     only the smaller ones are encoded.
+   - Encoded renditions are capped at **30 fps** (60 fps phone recordings halve the work).
+   - `FFMPEG_PRESET` defaults to `superfast`.
+
+   Measured on one minute of 1080p60 (12 Mbit/s): 360+720+1080 at `veryfast` → 11.0 s; the same
+   ladder with the changes above → 8.2 s; 360+720 → 4.9 s (2.2× faster). Progress is saved every
+   2% (`upload_jobs.progress_percent`) and shown in the dashboards as "preparing the video X%".
+
 5. **Publish atomically**: the output directory is renamed into `videos/<videoId>/`; the
    content key is stored **sealed with AES-256-GCM** (`MEDIA_KEY_ENCRYPTION_KEY`) in
    `video_assets`; the video becomes `READY` with its duration.
@@ -113,12 +144,12 @@ while playing, no background playback. See [security.md](security.md) §4 for li
 
 ## 7. Tuning
 
-| Setting                                   | Effect                                                                  |
-| ----------------------------------------- | ----------------------------------------------------------------------- |
-| `FFMPEG_PRESET`                           | `veryfast` default; `faster/fast/medium` = smaller files, more CPU time |
-| `HLS_RENDITIONS`                          | fewer renditions = faster processing, less storage                      |
-| `VIDEO_WORKER_CONCURRENCY`, `WORKER_CPUS` | parallelism vs. API responsiveness                                      |
-| `KEEP_ORIGINAL_VIDEOS`                    | keep sources for future re-encodes (doubles storage)                    |
+| Setting                                   | Effect                                                                              |
+| ----------------------------------------- | ----------------------------------------------------------------------------------- |
+| `FFMPEG_PRESET`                           | `superfast` default; `veryfast/faster/fast` = better quality per bit, more CPU time |
+| `HLS_RENDITIONS`                          | `360,720` default (about 2× faster than with 1080); add `1080` if needed            |
+| `VIDEO_WORKER_CONCURRENCY`, `WORKER_CPUS` | parallelism vs. API responsiveness                                                  |
+| `KEEP_ORIGINAL_VIDEOS`                    | keep sources for future re-encodes (doubles storage)                                |
 
 Storage and processing time depend on the source and the CPU; estimate them by uploading one
 typical lesson and reading `du -sh` of its `videos/<id>` folder and the job duration in the worker

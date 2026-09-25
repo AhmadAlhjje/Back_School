@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { config } from '../../config/env.js';
 import { actorFromRequest } from '../../core/audit/audit.js';
+import { filesUploadTarget, signUploadToken } from '../../core/auth/upload-token.js';
 import { RESPONSE_SENT, route, type ApiModule } from '../../core/http/route.js';
 import { idParams, lifecycleFilter, name, reorderBody, uuid } from '../../core/http/schemas.js';
 import { EDUCATIONAL_FILE_TYPES } from '../../core/storage/file-types.js';
@@ -21,6 +22,9 @@ import { toStaffFileDto } from './files.dto.js';
 
 const parentQuery = z.object({ scope: z.enum(FileScope), parentId: uuid });
 
+/** The upload token target of a file upload request (validated afterwards with `parentQuery`). */
+const queryText = (value: unknown) => (typeof value === 'string' ? value : '');
+
 export const filesModule: ApiModule = {
   prefix: '/files',
   tag: 'Files',
@@ -37,8 +41,9 @@ export const filesModule: ApiModule = {
       method: 'post',
       path: '/',
       summary: 'Upload a file (multipart field `file`, optional field `title`)',
-      description: `Allowed: ${Object.keys(EDUCATIONAL_FILE_TYPES).join(', ')}. Max ${config.media.maxFileSizeBytes / 1024 / 1024} MB. Content must match the extension.`,
+      description: `Allowed: ${Object.keys(EDUCATIONAL_FILE_TYPES).join(', ')}. Max ${config.media.maxFileSizeBytes / 1024 / 1024} MB. Content must match the extension. The body may be sent compressed (\`Content-Encoding: gzip\`). Accepts the bearer token or an upload token from POST /files/upload-token (\`X-Upload-Token\`, background uploads).`,
       roles: STAFF_ROLES,
+      uploadTarget: (req) => filesUploadTarget(queryText(req.query.scope), queryText(req.query.parentId)),
       query: parentQuery,
       bodyKind: 'multipart',
       successStatus: 201,
@@ -53,6 +58,15 @@ export const filesModule: ApiModule = {
           actorFromRequest(req),
         );
       },
+    }),
+    route({
+      method: 'post',
+      path: '/upload-token',
+      summary: 'Upload token for new files in one place (background uploads, header X-Upload-Token)',
+      roles: STAFF_ROLES,
+      query: parentQuery,
+      handler: ({ auth, query }) =>
+        Promise.resolve(signUploadToken(filesUploadTarget(query.scope, query.parentId), auth)),
     }),
     route({
       method: 'put',

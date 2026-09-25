@@ -164,12 +164,17 @@ export async function loginStudent(
 
 /** Optional self-registration (controlled by the `studentSelfRegistration` system setting). */
 export async function registerStudent(
-  input: { name: string; phone: string; password: string; device: DeviceInfo },
+  input: { name: string; phone: string; password: string; gradeId?: string; device: DeviceInfo },
   meta: RequestMeta,
 ): Promise<LoginResult> {
   const settings = await getSettings();
   if (!settings.studentSelfRegistration) throw new AppError('REGISTRATION_DISABLED');
   assertStrongPassword(input.password);
+  if (input.gradeId) {
+    const grade = await prisma.grade.findFirst({ where: { id: input.gradeId, archivedAt: null } });
+    if (!grade)
+      throw new AppError('VALIDATION_ERROR', { details: { field: 'gradeId', reason: 'GRADE_NOT_FOUND' } });
+  }
   const passwordHash = await hashPassword(input.password);
 
   try {
@@ -182,7 +187,7 @@ export async function registerStudent(
           passwordHash,
           passwordChangedAt: new Date(),
           lastLoginAt: new Date(),
-          studentProfile: { create: { source: 'SELF_REGISTERED' } },
+          studentProfile: { create: { source: 'SELF_REGISTERED', gradeId: input.gradeId ?? null } },
         },
       });
       const binding = await bindOrVerifyDevice(tx, user.id, input.device, meta.ip);

@@ -6,6 +6,7 @@ import { securityLogger } from '../logger/logger.js';
 import { sha256Hex } from '../security/crypto.js';
 import { PORTAL_FOR_ROLE, type AuthContext } from './auth-context.js';
 import { verifyAccessToken } from './jwt.js';
+import { UPLOAD_TOKEN_HEADER, verifyUploadToken } from './upload-token.js';
 
 export const DEVICE_HEADER = 'x-device-id';
 const LAST_SEEN_RESOLUTION_MS = 5 * 60 * 1000;
@@ -19,13 +20,10 @@ function bearerToken(req: Request): string {
 }
 
 /**
- * Resolves the caller's identity. A valid JWT is not enough: the auth session must still be
- * live, the account active, the portal must match the role, and — for students — the bound
- * device must be active and match the X-Device-Id header of this request.
+ * The auth session behind a token must still be live: not revoked or expired, same user, account
+ * active and not archived, role unchanged and matching the session's portal.
  */
-export async function resolveAuth(req: Request): Promise<AuthContext> {
-  const claims = verifyAccessToken(bearerToken(req));
-
+async function liveSession(claims: { sid: string; sub: string; role: UserRole }) {
   const session = await prisma.authSession.findUnique({
     where: { id: claims.sid },
     select: {
@@ -50,6 +48,18 @@ export async function resolveAuth(req: Request): Promise<AuthContext> {
   if (session.user.role !== claims.role || PORTAL_FOR_ROLE[claims.role] !== session.portal) {
     throw new AppError('TOKEN_INVALID');
   }
+  return session;
+}
+
+/**
+ * Resolves the caller's identity. A valid JWT is not enough: the auth session must still be
+ * live, the account active, the portal must match the role, and — for students — the bound
+ * device must be active and match the X-Device-Id header of this request.
+ */
+export async function resolveAuth(req: Request): Promise<AuthContext> {
+  const claims = verifyAccessToken(bearerToken(req));
+  const session = await liveSession(claims);
+  const now = new Date();
 
   if (session.portal === 'STUDENT_APP') {
     const deviceHeader = req.header(DEVICE_HEADER);
@@ -85,6 +95,33 @@ export const authenticate: RequestHandler = async (req, _res, next) => {
   req.auth = await resolveAuth(req);
   next();
 };
+
+/**
+ * `authenticate` for upload routes: without a bearer token, an upload token (X-Upload-Token) for
+ * this request's target is accepted instead — staff only, same live-session checks — so a
+ * background upload keeps working after the access token expired (see upload-token.ts).
+ */
+export function authenticateUpload(targetOf: (req: Request) => string): RequestHandler {
+  return async (req, _res, next) => {
+    const uploadToken = req.header(UPLOAD_TOKEN_HEADER);
+    if (!uploadToken || req.headers.authorization) {
+      req.auth = await resolveAuth(req);
+      next();
+      return;
+    }
+    const claims = verifyUploadToken(uploadToken, targetOf(req));
+    if (claims.role === 'STUDENT') throw new AppError('FORBIDDEN');
+    const session = await liveSession(claims);
+    req.auth = {
+      userId: session.userId,
+      role: session.user.role,
+      sessionId: session.id,
+      portal: session.portal,
+      deviceId: null,
+    };
+    next();
+  };
+}
 
 /** Role gate. Must run after `authenticate`. */
 export function authorize(roles: readonly UserRole[]): RequestHandler {
