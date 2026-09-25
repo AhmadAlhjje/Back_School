@@ -23,7 +23,7 @@ Formatting: Prettier (single quotes, trailing commas, width 120) for TS/TSX; `da
 - Multi-step writes in `prisma.$transaction`, with `writeAudit(tx, ...)` inside the transaction.
 - Never hard-delete business data: archive (`archivedAt`) and restore.
 - Read configuration only through `config` (`src/config/env.ts`); add new variables to the Zod
-  schema, `.env.example`, `deploy/.env.example` and `deploy/docker-compose.yml`.
+  schema, `.env.example`, `.env.production.example` and `docker-compose.yml`.
 - Schema changes: edit `database/schema.prisma`, run `npm run db:make-migration -- --name <change>`,
   commit the new folder in `database/migrations`, never edit a shipped migration.
 - Background work goes through `src/core/queue/queues.ts` (works with and without Redis).

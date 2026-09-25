@@ -6,7 +6,7 @@ The decisions, domain model, access rule and roles are in the top-level
 ## 1. Request lifecycle (API)
 
 ```
-Nginx ─► Express
+(dashboards: their Nginx forwards /api) ─► Express
   1. request id (x-request-id) + pino-http logger (secrets redacted, media tokens stripped)
   2. helmet, CORS allowlist, cookie-parser, express.json({ limit: 1 MB })
   3. route(): rate limiter (if declared) → authenticate (JWT → auth session → user → device)
@@ -91,5 +91,5 @@ access tree → the student's next request sees everything under that teacher, i
 added later (nothing is copied per video).
 
 **Student plays a video:** app → playback grant (full check) → player fetches playlists with the
-signed token → key endpoint re-checks everything → segments via X-Accel. Closing access or
+signed token → key endpoint re-checks everything → segments streamed by the API. Closing access or
 resetting the device stops the key endpoint immediately.

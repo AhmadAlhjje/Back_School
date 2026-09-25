@@ -1,7 +1,7 @@
 # Backend — خادم المنصة التعليمية
 
 الـ API وقاعدة البيانات (التهجيرات والبيانات التجريبية) ومعالجة الفيديو في مشروع واحد.
-Node 22+ · TypeScript · Express 5 · Prisma 7 · MySQL/MariaDB · FFmpeg.
+Node 22+ · TypeScript · Express 5 · Prisma 7 · MariaDB/MySQL · FFmpeg.
 
 ## التشغيل المحلي
 
@@ -23,6 +23,19 @@ npm run dev
 - تشغيل الـ API على http://localhost:4000 (والتوثيق على http://localhost:4000/api/docs).
 
 لا حاجة لـ Redis محلياً: معالجة الفيديو والإشعارات تعمل داخل الخادم نفسه.
+
+## الرفع على السيرفر (VPS) بـ Docker
+
+كل شيء داخل Docker: قاعدة البيانات، التهجير، الـ API على المنفذ **6000**، معالج الفيديو، Redis،
+والنسخ الاحتياطي اليومي. داخل مجلد `backend` على السيرفر:
+
+```bash
+bash docker/init-env.sh          # مرة واحدة: ينشئ .env بكلمات سر عشوائية ويسأل عن حساب المشرف العام
+docker compose up -d --build     # ينشئ القاعدة ويهجّرها ويشغّل كل شيء
+```
+
+للتحديث بعد `git pull`: نفس الأمر `docker compose up -d --build` (التهجيرات الجديدة تُطبّق تلقائياً).
+الخطوات الكاملة (والمواقع على 6001 و 6002): [docs/deployment.md](docs/deployment.md).
 
 ## الحسابات التجريبية
 
@@ -74,7 +87,8 @@ src/                 الكود: config, core (http, auth, security, queue, stor
 database/            schema.prisma · migrations/ · seeders/ · scripts/ (نسخ احتياطي/استعادة) · cli.ts
 tests/               اختبارات تكامل على MySQL حقيقية
 scripts/             e2e-flow.ts · create-super-admin.ts · app-live-setup.ts
-deploy/              ملفات الرفع على VPS (Docker Compose, Nginx, TLS, النسخ الاحتياطي)
+docker/              ملفات الرفع على VPS: init-env.sh، إعداد MariaDB، النسخ الاحتياطي
+docker-compose.yml   تشغيل الباك على السيرفر بأمر واحد (الـ API على 6000)
 docs/                التوثيق التفصيلي
 storage/             الفيديوهات والملفات (خاص، لا يُخدم مباشرة)
 ```

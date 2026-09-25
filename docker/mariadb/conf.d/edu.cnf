@@ -2,10 +2,11 @@
 character-set-server = utf8mb4
 collation-server = utf8mb4_unicode_ci
 default-time-zone = '+00:00'
-# The API connects with a small pool per process (API + worker).
+# The API and the worker each use a small connection pool.
 max_connections = 200
-# Size to roughly 50-60% of the RAM given to MySQL on the VPS.
-innodb_buffer_pool_size = 512M
+# MariaDB shares the server with the API, the video worker (FFmpeg) and the dashboards.
+# On a server with 4 GB of RAM or more, 1G is a good value.
+innodb_buffer_pool_size = 256M
 innodb_flush_log_at_trx_commit = 1
 # Binary logs enable point-in-time recovery between nightly dumps (see docs/backup.md).
 log_bin = mysql-bin

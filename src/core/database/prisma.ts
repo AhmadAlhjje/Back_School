@@ -3,8 +3,8 @@ import { config } from '../../config/env.js';
 import { PrismaClient } from '../../generated/prisma/client.js';
 
 /**
- * Single Prisma client per process. The MariaDB driver adapter speaks the MySQL protocol and
- * works with both MySQL 8 (production) and MariaDB (local development).
+ * Single Prisma client per process, through the MariaDB driver adapter: MariaDB in production
+ * (Docker) and in local development (XAMPP); the MySQL protocol also works with MySQL 8.
  */
 function createPrismaClient() {
   const adapter = new PrismaMariaDb(config.databaseUrl);

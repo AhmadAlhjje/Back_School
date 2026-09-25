@@ -5,10 +5,11 @@ import { AppError } from '../../core/errors/app-error.js';
 import { assertFileAccess, assertVideoAccess } from '../access/access-policy.js';
 import { FILE_TOKEN_TTL_SECONDS, playbackTtlSeconds, signMediaToken } from './media-token.js';
 
-const MEDIA_BASE = `${config.apiBaseUrl}/api/v1/media`;
+const MEDIA_PATH = '/api/v1/media';
+const MEDIA_BASE = `${config.apiBaseUrl}${MEDIA_PATH}`;
 
-function manifestUrl(videoId: string, token: string) {
-  return `${MEDIA_BASE}/videos/${videoId}/master.m3u8?token=${encodeURIComponent(token)}`;
+function manifestUrl(base: string, videoId: string, token: string) {
+  return `${base}/videos/${videoId}/master.m3u8?token=${encodeURIComponent(token)}`;
 }
 
 /**
@@ -32,12 +33,16 @@ export async function issueStudentPlayback(auth: AuthContext, videoId: string) {
     videoId: video.id,
     title: video.title,
     durationSeconds: video.durationSeconds,
-    manifestUrl: manifestUrl(video.id, token),
+    manifestUrl: manifestUrl(MEDIA_BASE, video.id, token),
     expiresAt,
   };
 }
 
-/** Owner/admin preview of any processed video (including archived ones). */
+/**
+ * Owner/admin preview of any processed video (including archived ones). The manifest URL is
+ * relative to the API: each dashboard resolves it against the address it calls the API on (in
+ * Docker that is the dashboard's own site, whose Nginx forwards /api to the backend).
+ */
 export async function issueStaffPreview(auth: AuthContext, videoId: string) {
   const video = await prisma.video.findUnique({ where: { id: videoId }, include: { asset: true } });
   if (!video) throw new AppError('VIDEO_NOT_FOUND');
@@ -50,7 +55,7 @@ export async function issueStaffPreview(auth: AuthContext, videoId: string) {
     videoId: video.id,
     title: video.title,
     durationSeconds: video.durationSeconds,
-    manifestUrl: manifestUrl(video.id, token),
+    manifestUrl: manifestUrl(MEDIA_PATH, video.id, token),
     expiresAt,
   };
 }

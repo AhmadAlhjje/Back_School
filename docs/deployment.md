@@ -1,183 +1,144 @@
-# Deployment (single VPS, Docker Compose)
+# Deployment (one VPS, Docker Compose)
 
-Everything runs on one Linux server with Docker, from `backend/deploy/`. Only Nginx is exposed;
-MySQL, Redis, the API and the worker live on an internal network. The two dashboards are static
-sites: each is built in its own project and its `dist/` content is copied to `deploy/sites/`.
+The three server projects are separate Git repositories. Each has its own `Dockerfile` and
+`docker-compose.yml` and starts with one command. On the server they sit side by side:
 
 ```
-Internet ──► edge (Nginx: TLS, dashboards, API proxy, X-Accel media)
-                 │
-                 ├──► api      (Express, port 4000, internal)
-                 │      └── media volume (rw)
-                 └── media volume (ro) ◄── worker (FFmpeg, BullMQ)
-                                              │
-                        mysql (8.4) ◄─────────┼──── redis (7.4, AOF)
-                        backup (daily dump, weekly restore test)
-                        certbot (renewals)
+/opt/edu/
+├── backend/              docker compose up -d --build  → API on port 6000
+├── institute_dashboard/  docker compose up -d --build  → owner dashboard on port 6001
+└── super_admin_web/      docker compose up -d --build  → super admin dashboard on port 6002
 ```
 
-| Service   | Image / build                                 | Purpose                                                               |
-| --------- | --------------------------------------------- | --------------------------------------------------------------------- |
-| `edge`    | `deploy/nginx/Dockerfile`                     | Nginx: TLS, API proxy, X-Accel media, dashboards from `deploy/sites/` |
-| `api`     | `Dockerfile` target `runtime`                 | REST API                                                              |
-| `worker`  | same image, `node dist/workers/index.js`      | Video processing, notifications fan-out, maintenance                  |
-| `migrate` | `Dockerfile` target `tools` (profile `tools`) | `npm run db:migrate`, `admin:create`                                  |
-| `mysql`   | `mysql:8.4`                                   | Database (`deploy/mysql/conf.d/edu.cnf`)                              |
-| `redis`   | `redis:7.4-alpine`                            | Queues and rate limits (password, AOF, `noeviction`)                  |
-| `backup`  | `deploy/backup/Dockerfile`                    | Nightly dump + rotation + weekly restore verification                 |
-| `certbot` | `certbot/certbot`                             | Let's Encrypt renewals (webroot)                                      |
+```
+Student app ───────────────► :6000  api (Express) ──┬── mariadb (11.4)   ◄── migrate (one-shot)
+                                    ▲    │ media vol │── redis (7.4, AOF)
+Browser ──► :6001 owner  (Nginx) ───┤    ▼           └── backup (daily dump → ./backups)
+Browser ──► :6002 admin  (Nginx) ───┘  worker (FFmpeg, BullMQ)
+            each serves its site and forwards /api to edu-api:6000 on the "edu-platform" network
+```
 
-## 1. Server requirements
+| Project / service                           | Purpose                                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------------------------ |
+| backend `mariadb`                           | Database, created on first start (`docker/mariadb/conf.d/edu.cnf`)                   |
+| backend `migrate`                           | Runs on every `up`, then exits: creates/migrates the database, first super admin     |
+| backend `api`                               | REST API on port 6000; waits for `migrate` to finish                                 |
+| backend `worker`                            | Video processing (FFmpeg), notifications, maintenance — lower CPU priority           |
+| backend `redis`                             | Queues and rate limits (password, AOF, `noeviction`)                                 |
+| backend `backup`                            | Daily dump into `backend/backups/`, weekly restore test (see [backup.md](backup.md)) |
+| institute_dashboard / super_admin_web `web` | Nginx: the built site + `/api` forwarded to the backend                              |
 
-- Ubuntu 22.04/24.04 (or any Linux with Docker Engine 24+ and the Compose plugin).
-- 4 vCPU / 8 GB RAM is a comfortable start (FFmpeg is the heavy part). Disk: size it from a
-  sample lesson (see [video-system.md](video-system.md) §7); videos are the dominant cost.
-- DNS: three records pointing to the server, e.g. `api.example.com`, `dashboard.example.com`,
-  `admin.example.com`.
-- Firewall: allow 22, 80, 443 only.
+Why the dashboards forward `/api` instead of calling port 6000: browsers refuse port 6000
+(reserved for X11), and one origin per dashboard means no CORS and a first-party login cookie.
+The app is not a browser and calls `http://SERVER:6000` directly. The database and Redis are
+never published.
+
+## 1. Server
+
+- Ubuntu 22.04/24.04 with Docker Engine and the Compose plugin. 2 vCPU / 4 GB RAM is the
+  minimum; video processing (FFmpeg) is the heavy part, so more CPU means faster processing.
+  Disk: videos dominate (see [video-system.md](video-system.md) §7).
+- Open ports: 22 (SSH), 6000, 6001, 6002 — also in the provider's firewall panel, if it has one.
 
 ```bash
-sudo apt-get update && sudo apt-get install -y ca-certificates curl git
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker "$USER"   # log out and back in
+apt-get update && apt-get install -y git curl openssl
+curl -fsSL https://get.docker.com | sh
+docker compose version
+ufw allow 22/tcp && ufw allow 6000:6002/tcp && ufw --force enable
 ```
 
-## 2. Configure
+## 2. Backend (first)
 
 ```bash
-# copy the backend project to the server (git clone or upload), then:
-cd backend/deploy
-cp .env.example .env
-nano .env
+mkdir -p /opt/edu && cd /opt/edu
+git clone https://github.com/<account>/<backend-repo>.git backend
+cd backend
+bash docker/init-env.sh          # writes .env: random passwords/secrets + asks for the super admin
+docker compose up -d --build     # first build takes several minutes
+docker compose ps                # api "healthy"; migrate "exited (0)"
+curl http://localhost:6000/health
 ```
 
-Fill every `CHANGE_ME`:
+`.env` (from [`.env.production.example`](../.env.production.example)) holds the server address
+(`SERVER_ADDRESS`, preset to the VPS IP), the ports, the generated secrets and the first super
+admin. The first start creates the database, applies every migration and creates the super
+admin; later starts apply only new migrations and never change existing accounts.
 
-| Variable                                                  | How to generate                                                           |
-| --------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `REDIS_PASSWORD` | `openssl rand -hex 24` (hex: safe inside URLs)                            |
-| `JWT_ACCESS_SECRET`, `MEDIA_TOKEN_SECRET`                 | `openssl rand -hex 32`                                                    |
-| `MEDIA_KEY_ENCRYPTION_KEY`                                | `openssl rand -base64 32` — **back this up** (see [backup.md](backup.md)) |
-| `SEED_SUPER_ADMIN_PHONE/PASSWORD`                         | The first super admin (password: 8+ chars, letters and digits)            |
+**Keep a copy of `.env` off the server** (password manager): `MEDIA_KEY_ENCRYPTION_KEY` decrypts
+every processed video, and the database passwords are fixed when the database is created.
 
-The API refuses to start with example or short secrets.
-
-## 3. Build and start
+## 3. Dashboards
 
 ```bash
-docker compose build                          # api/worker, edge (Nginx), backup
-docker compose up -d mysql redis
-docker compose run --rm migrate               # applies the database migrations
-docker compose run --rm migrate npm run admin:create   # creates the super admin from .env
-docker compose up -d
-docker compose ps                             # all services "healthy"/"running"
+cd /opt/edu
+git clone https://github.com/<account>/<owner-dashboard-repo>.git institute_dashboard
+git clone https://github.com/<account>/<admin-dashboard-repo>.git super_admin_web
+(cd institute_dashboard && docker compose up -d --build)
+(cd super_admin_web && docker compose up -d --build)
 ```
 
-On first boot the edge creates a temporary self-signed certificate so Nginx can start.
-Replace it with a real one:
+They join the `edu-platform` network created by the backend (start the backend first).
+Optional `.env` next to each `docker-compose.yml`: `DASHBOARD_PORT` (6001 / 6002) and
+`API_UPSTREAM` (default `http://edu-api:6000`).
+
+Then open `http://SERVER:6002`, sign in as the super admin, create the institute owner, and the
+owner signs in at `http://SERVER:6001`.
+
+## 4. Student app
+
+`flutter_app/.env` holds the API address (`API_BASE_URL=http://SERVER:6000`), built into the app.
+Android release builds allow plain HTTP only to that host (the network security config is
+generated from `.env`, see `android/app/build.gradle.kts`). Build and signing: the Flutter
+project's README.
+
+## 5. Updating
 
 ```bash
-bash scripts/issue-certificate.sh --staging   # optional dry run against the staging CA
-bash scripts/issue-certificate.sh
-```
-
-Renewals are automatic: the `certbot` service runs `certbot renew` twice a day and the edge
-reloads Nginx every 6 hours.
-
-Check:
-
-```bash
-curl -s https://api.example.com/health            # {"success":true,...}
-curl -s https://api.example.com/health/ready      # database + redis status
-```
-
-## 4. Dashboards
-
-Each dashboard is built on any machine with Node, in its own project, against the production API:
-
-```bash
-# institute_dashboard/.env  and  super_admin_web/.env
-VITE_API_BASE_URL=https://api.example.com
-
-cd institute_dashboard && npm install && npm run build   # → dist/
-cd super_admin_web && npm install && npm run build       # → dist/
-```
-
-Copy the **content** of each `dist/` folder to the server:
-
-| Project                      | Server folder                 | Domain         |
-| ---------------------------- | ----------------------------- | -------------- |
-| `institute_dashboard/dist/*` | `backend/deploy/sites/owner/` | `OWNER_DOMAIN` |
-| `super_admin_web/dist/*`     | `backend/deploy/sites/admin/` | `ADMIN_DOMAIN` |
-
-e.g. `scp -r dist/* user@server:~/backend/deploy/sites/owner/`. Nginx serves the new files
-immediately (no restart). Then open `https://admin.example.com`, sign in as the super admin,
-create the institute owner account, and the owner signs in at `https://dashboard.example.com`.
-
-## 5. Student app
-
-Set the production API in `flutter_app/.env` (HTTPS is mandatory in release builds) and build:
-
-```bash
-# flutter_app/.env
-API_BASE_URL=https://api.example.com
-
-cd flutter_app
-flutter build apk --release
-# or an App Bundle for Google Play:
-flutter build appbundle --release
-```
-
-A universal APK contains every CPU architecture (~80 MB). To hand out APKs directly, add
-`--split-per-abi` and give most phones `app-arm64-v8a-release.apk`; Google Play builds from the
-App Bundle serve each device only its own architecture.
-
-Release signing uses `android/key.properties` (see the Flutter project's README).
-iOS builds require macOS with Xcode (`flutter build ipa`).
-
-## 6. Updating
-
-```bash
-# update the backend files on the server (git pull or upload), then:
-cd backend/deploy
-docker compose build
-docker compose run --rm migrate               # new migrations, if any
-docker compose up -d                          # recreates changed services
+cd /opt/edu/backend && git pull && docker compose up -d --build   # new migrations run first
+cd /opt/edu/institute_dashboard && git pull && docker compose up -d --build
+cd /opt/edu/super_admin_web && git pull && docker compose up -d --build
 docker image prune -f
 ```
 
-Migrations are forward-only and additive; take a backup first (`docker compose exec backup
-/opt/edu/scheduler.sh now`) before upgrading. Dashboards are updated by copying a new `dist/`.
+Migrations are forward-only and additive; for a large upgrade take a backup first
+(`docker compose exec backup /opt/edu/scheduler.sh now`).
 
-## 7. Operations
+## 6. Operations (in `/opt/edu/backend`)
 
-| Task                 | Command                                                                                         |
-| -------------------- | ----------------------------------------------------------------------------------------------- |
-| Logs                 | `docker compose logs -f api worker` (JSON, secrets redacted)                                    |
-| Restart the API      | `docker compose restart api`                                                                    |
-| Backup now           | `docker compose exec backup /opt/edu/scheduler.sh now`                                          |
-| Verify latest backup | `docker compose exec backup /opt/edu/verify-backup.sh`                                          |
-| MySQL shell          | `docker compose exec mysql mysql -uroot -p`                                                     |
-| Queue depth          | `docker compose exec redis redis-cli -a "$REDIS_PASSWORD" --no-auth-warning keys 'bull:*:wait'` |
-| Swagger UI           | set `ENABLE_API_DOCS=true`, `docker compose up -d api`, open `/api/docs`                        |
+| Task                 | Command                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| Status               | `docker compose ps`                                                                                     |
+| Logs                 | `docker compose logs -f api worker` (JSON, secrets redacted); first start: `logs migrate`               |
+| Restart              | `docker compose restart api worker`                                                                     |
+| Stop / start         | `docker compose down` / `docker compose up -d` (data stays in the volumes)                              |
+| Backup now           | `docker compose exec backup /opt/edu/scheduler.sh now`                                                  |
+| Verify latest backup | `docker compose exec backup /opt/edu/verify-backup.sh`                                                  |
+| Database shell       | `docker compose exec mariadb sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" edu_institute'`           |
+| Queue depth          | `docker compose exec redis sh -c 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning keys "bull:*:wait"'` |
 
-**Worker scaling.** `VIDEO_WORKER_CONCURRENCY` (parallel videos) and `WORKER_CPUS` bound
-FFmpeg so uploads and playback stay responsive while videos are processed.
+Never run `docker compose down -v`: `-v` deletes the database and media volumes.
 
-**Media delivery.** `MEDIA_ACCEL_REDIRECT=true` is set in compose: the API authorizes every
-segment/file request and Nginx streams the bytes from the read-only media volume through the
-`internal` `/protected-media/` location. Storage is never reachable directly.
+**Video processing.** `VIDEO_WORKER_CONCURRENCY` (parallel videos) and `HLS_RENDITIONS`
+(qualities produced) in `.env` set the load; the worker runs at a lower CPU priority so the API
+stays responsive while videos are processed.
 
-**Monitoring.** Point an uptime monitor at `https://api.example.com/health/ready` (HTTP 200
-when MySQL and Redis are reachable, 503 otherwise). Alert on backup failures in
+**Monitoring.** Point an uptime monitor at `http://SERVER:6000/health/ready` (HTTP 200 when the
+database and Redis are reachable, 503 otherwise). Backup failures appear as `ERROR` in
 `docker compose logs backup`.
+
+## 7. Moving to a domain with HTTPS (recommended)
+
+With a bare IP everything travels as plain HTTP, including passwords. With a domain, put a TLS
+reverse proxy (e.g. Caddy or Nginx + Let's Encrypt) in front of ports 6000–6002, then:
+in `backend/docker-compose.yml` set `API_BASE_URL` / `CORS_ORIGINS` to the `https://` addresses
+and `COOKIE_SECURE=true` in `.env`; set `API_BASE_URL=https://…` in `flutter_app/.env` and
+publish a new app build (release builds then allow no plain HTTP except the offline player's
+loopback).
 
 ## 8. Security checklist
 
-- [ ] All `CHANGE_ME` values replaced; `deploy/.env` readable by root/deploy user only (`chmod 600`).
-- [ ] `MEDIA_KEY_ENCRYPTION_KEY` stored in a password manager.
-- [ ] `ENABLE_API_DOCS=false` in production (default).
-- [ ] Optional: restrict `admin.example.com` to your IPs (`allow`/`deny` in
-      `deploy/nginx/templates/edu.conf.template`).
+- [ ] `.env` created by `docker/init-env.sh` (random secrets, mode 600) and copied to a password manager.
+- [ ] SSH: keys only, no password login; unattended security upgrades enabled.
+- [ ] Only 22 and 6000–6002 open; the database is never published.
 - [ ] Backups copied off the server (see [backup.md](backup.md)).
-- [ ] SSH: keys only, no root login; unattended security upgrades enabled.
+- [ ] A domain with HTTPS as soon as possible (section 7).

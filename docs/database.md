@@ -1,6 +1,6 @@
 # Database
 
-MySQL 8 in production (MariaDB 10.4+ works for development). Schema, migrations, seeds and
+MariaDB: 11.4 in production (Docker), 10.4+ for development (XAMPP); MySQL 8 also works. Schema, migrations, seeds and
 operational scripts live in [`database/`](../database) inside the backend; the Prisma 7 toolchain
 runs them (`prisma.config.ts`).
 
@@ -87,8 +87,8 @@ Rules: migrations are committed and never edited after they ship; changes are ad
 (expand → migrate data → contract in a later release). Prisma does not model triggers or CHECK
 constraints, so they live in hand-written SQL migrations and survive later diffs.
 
-MySQL 8 with binary logging needs `log_bin_trust_function_creators=1` for a non-SUPER user to
-create the triggers (set in `deploy/mysql/conf.d/edu.cnf`).
+With binary logging, MariaDB/MySQL need `log_bin_trust_function_creators=1` for a non-SUPER
+user to create the triggers (set in `docker/mariadb/conf.d/edu.cnf`).
 
 ## Seeds
 

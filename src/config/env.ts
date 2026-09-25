@@ -29,7 +29,14 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   API_BASE_URL: z.url().default('http://localhost:4000'),
   CORS_ORIGINS: csv.default([]),
-  TRUST_PROXY: z.coerce.number().int().min(0).default(0),
+  // Proxies in front of the API: a hop count (1 behind one Nginx) or trusted addresses/subnets, e.g.
+  // `uniquelocal` (private networks: the dashboards' Nginx in Docker) — so req.ip is the real client.
+  TRUST_PROXY: z
+    .string()
+    .trim()
+    .min(1)
+    .default('0')
+    .transform((value) => (/^\d+$/.test(value) ? Number(value) : value)),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
   DB_HOST: z.string().min(1).default('127.0.0.1'),

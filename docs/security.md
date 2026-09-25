@@ -46,7 +46,7 @@ screens, but they are never trusted.
 
 | Asset            | Protection                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Storage          | Private directory, never served statically. Nginx can only stream it from an `internal` location after an authorizing API response (`X-Accel-Redirect`)                                                                                                                                                                                                                                                                                               |
+| Storage          | Private Docker volume, never served statically: every byte leaves through an API route that authorized the request (optionally handed to Nginx with `X-Accel-Redirect`)                                                                                                                                                                                                                                                                               |
 | HLS video        | AES-128 segments, random key per video; keys stored sealed with AES-256-GCM (`MEDIA_KEY_ENCRYPTION_KEY`)                                                                                                                                                                                                                                                                                                                                              |
 | Playback URL     | Signed media token bound to `(video, user, session, device)`; lifetime `clamp(2 × duration + 30 min, 30 min, 12 h)`; playlists are rewritten per request                                                                                                                                                                                                                                                                                              |
 | Key endpoint     | Re-runs the full authorization (session alive, device bound, access still open) on every call and is rate-limited                                                                                                                                                                                                                                                                                                                                     |
@@ -63,8 +63,10 @@ limit and expose that. Widevine/FairPlay DRM can be added later behind the same 
 
 ## 5. Transport and web
 
-- HTTPS only in production (HSTS 2 years). Android release builds refuse cleartext except
-  loopback; iOS ATS allows only local networking.
+- Current VPS setup: plain HTTP on the server's IP (ports 6000–6002) until a domain is set
+  up — move to HTTPS as soon as possible ([deployment.md](deployment.md) §7). Android release
+  builds allow cleartext only to the API host in `.env` (when it is `http://`) and loopback;
+  iOS ATS allows only local networking (iOS builds need an `https://` API).
 - Helmet security headers on the API; strict CSP, `X-Frame-Options: DENY`, `nosniff`,
   `Referrer-Policy` on the dashboards.
 - CORS: explicit allowlist of the two dashboard origins, credentials only for them.
@@ -84,7 +86,8 @@ limit and expose that. Widevine/FairPlay DRM can be added later behind the same 
 | Key requests per IP      | 60 / min     |
 
 Limits are stored in Redis when configured (shared by all API processes), otherwise in the single API
-process's memory. Nginx adds coarse per-IP limits in production.
+process's memory. Behind the dashboards' Nginx the real client address is used
+(`TRUST_PROXY=uniquelocal`: forwarded addresses are trusted only from private networks).
 Login errors are identical for unknown phones and wrong passwords.
 
 ## 7. Audit and logging
@@ -96,7 +99,8 @@ Login errors are identical for unknown phones and wrong passwords.
 - `audit_logs` is **append-only in the database**: triggers reject `UPDATE` and `DELETE`
   whoever connects (migration `20260925010000_audit_log_append_only`, covered by a test).
 - Structured logs (pino) redact authorization headers, cookies, passwords, tokens and keys;
-  Nginx logs the path without query strings, so signed media tokens are never written to disk.
+  the dashboards' Nginx logs paths without query strings, so signed media tokens are never
+  written to disk.
 
 ## 8. Data protection
 
@@ -115,7 +119,7 @@ an authorized key request. The Flutter suite covers the token refresh/session-en
 offline store (encrypted at rest, loopback nonce, revocation) and route guards.
 
 Hardening options for larger deployments: separate MySQL users for migrations (DDL) and runtime
-(DML only); admin dashboard IP allowlist in Nginx; WAF/CDN in front of the edge.
+(DML only); admin dashboard IP allowlist in its Nginx; WAF/CDN in front of the server.
 
 ## Reporting a vulnerability
 

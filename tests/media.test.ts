@@ -182,9 +182,11 @@ describe('video pipeline (real FFmpeg)', () => {
     clearMediaGuardCache();
     expect((await api().get(local(masterUrl))).status).toBe(403);
 
-    // Staff preview.
+    // Staff preview: relative to the API, so it works through the dashboards' own address.
     const preview = await api().post(`/api/v1/videos/${videoId}/preview`).set(authHeaders(owner));
-    expect((await api().get(local(preview.body.data.manifestUrl))).status).toBe(200);
+    const previewUrl: string = preview.body.data.manifestUrl;
+    expect(previewUrl).toMatch(new RegExp(`^/api/v1/media/videos/${videoId}/master\\.m3u8\\?token=`));
+    expect((await api().get(previewUrl)).status).toBe(200);
 
     // New video notification reached students with access at processing time: none had access then.
     expect(await prisma.notification.count({ where: { type: 'NEW_LESSON' } })).toBe(1);

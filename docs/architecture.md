@@ -18,7 +18,7 @@ deployment, backup, development, internals).
 | Flutter / Dart | 3.47.2 / 3.13.2 (stable)                         | Dart 3 null-safe, Material 3                                                |
 | Android        | SDK 36, JDK 17                                   | Android build verified with `flutter build apk`                             |
 | iOS            | Windows host — no Xcode                          | iOS code is written but can only be compiled on macOS                       |
-| MySQL          | XAMPP MariaDB 10.4 on :3306                      | Dev database. Production target is **MySQL 8**                              |
+| MySQL          | XAMPP MariaDB 10.4 on :3306                      | Dev database. Production: **MariaDB 11.4** (Docker)                         |
 | Redis          | Not on Windows                                   | Optional in development (jobs run inside the API without it). Prod: Redis 7 |
 | FFmpeg         | 7.1.1 on PATH                                    | Used by the video worker (also installed in the prod image)                 |
 | Docker         | Installed, **not used locally** (owner's choice) | Docker files are deliverables for the VPS only                              |
@@ -37,12 +37,11 @@ TanStack Query 5, Tailwind CSS 4, Vitest 4.
                  │ Flutter student app │   │ institute_dashboard │   │ super_admin_web  │
                  │ (Android / iOS)     │   │ (React, OWNER)      │   │ (React, ADMIN)   │
                  └─────────┬──────────┘   └─────────┬──────────┘   └────────┬─────────┘
-                           │ HTTPS (JSON + HLS)       │ HTTPS                  │ HTTPS
+                           │ :6000 (JSON + HLS)      │ :6001                   │ :6002
+                           │                ┌─────────┴──────────┐   ┌────────┴─────────┐
+                           │                │ Nginx: site + /api │   │ Nginx: site + /api│
+                           │                └─────────┬──────────┘   └────────┬─────────┘
                            ▼                          ▼                        ▼
-                 ┌─────────────────────────────────────────────────────────────────────┐
-                 │ Nginx (TLS, static dashboards, X-Accel media offload)               │
-                 └─────────────────────────────────┬───────────────────────────────────┘
-                                                   ▼
                  ┌──────────────────────────┐  enqueue  ┌──────────────────────────────┐
                  │ Backend API (Express 5)  │──────────▶│ Worker (BullMQ)              │
                  │ auth · RBAC · content ·  │   Redis   │ FFmpeg → HLS → AES-128       │
@@ -51,7 +50,7 @@ TanStack Query 5, Tailwind CSS 4, Vitest 4.
                               │ Prisma                                  │
                               ▼                                         ▼
                         ┌──────────┐                        ┌────────────────────────┐
-                        │ MySQL 8  │                        │ Private media storage  │
+                        │ MariaDB  │                        │ Private media storage  │
                         └──────────┘                        │ (never publicly served)│
                                                             └────────────────────────┘
 ```
@@ -74,7 +73,7 @@ Four independent projects:
 education_platform/
 ├── backend/                  API + background jobs (Node, TS, Express, Prisma, BullMQ)
 │   ├── database/             schema.prisma, migrations/, seeders/, backup scripts, cli.ts
-│   ├── deploy/               VPS: docker-compose, Nginx, MySQL config, backups, TLS
+│   ├── docker/               VPS: init-env.sh, MariaDB config, backup image (docker-compose.yml at the root)
 │   └── docs/                 this documentation
 ├── institute_dashboard/      OWNER dashboard (React + Vite)
 ├── super_admin_web/          SUPER_ADMIN dashboard (React + Vite)
@@ -186,8 +185,8 @@ Upload → storage → queue → FFmpeg → HLS → AES-128 → READY. Details i
   session → device → student status → access → video READY, then returns a manifest URL
   carrying a signed media token bound to `(video, student, device, session)` with a
   duration-based expiry. Playlists are rewritten per request; the key endpoint re-runs the
-  full authorization; segments are useless without the key. Nginx `X-Accel-Redirect` can
-  serve segments after the API authorizes them.
+  full authorization; segments are useless without the key. The API streams segments itself
+  (optionally Nginx `X-Accel-Redirect` behind an Nginx that shares the media volume).
 - **Files** (PDF, Office, ZIP, images): private storage, 5-minute signed download tokens
   issued only after an access check. PDFs/images render in-app from memory.
 - **Offline**: encrypted HLS segments are downloaded to app-private storage; the key is
@@ -289,4 +288,4 @@ Warning `#F59E0B`, Danger `#DC2626`, Border `#E2E8F0`. Font: **Cairo** everywher
 | 7     | Media: chunked upload, worker, HLS-AES, playback, files, offline | real FFmpeg pipeline test green          |
 | 8     | Security test suite (see spec §90)                               | all green                                |
 | 9     | Full test/lint/build sweep                                       | zero errors                              |
-| 10    | Production: Docker, Nginx, TLS, backups, monitoring docs         | documented, backup restore tested ✓      |
+| 10    | Production: Docker (one command per project), backups, docs      | documented, backup restore tested ✓      |

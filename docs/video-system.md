@@ -69,7 +69,7 @@ App ── POST /student/videos/:id/playback ──► API
 Player ── master.m3u8?token ──► API (rewrites variant URLs with the same token)
        ── 720p/index.m3u8?token ──► API (rewrites segment URLs + key URI with the token)
        ── key?token ──► API: FULL authorization again, returns the 16-byte key (rate-limited)
-       ── seg_00001.ts?token ──► API verifies the token → X-Accel-Redirect → Nginx streams the file
+       ── seg_00001.ts?token ──► API verifies the token → streams the file (Range support)
 ```
 
 - The media token (JWT, audience `edu-media`) is bound to video, user, auth session and device;

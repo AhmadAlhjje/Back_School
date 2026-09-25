@@ -4,23 +4,23 @@ What must be protected, and how:
 
 | Data                                                  | Where                                   | Backed up by                                                       |
 | ----------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
-| Database (accounts, catalog, access, audit, settings) | MySQL volume                            | Nightly `mysqldump` (this document) + binlogs                      |
+| Database (accounts, catalog, access, audit, settings) | `db-data` volume (MariaDB)              | Nightly dump (this document) + binlogs                             |
 | Media (HLS videos, files, teacher photos)             | `media` volume (`/var/lib/edu/storage`) | File-level sync (section 4)                                        |
-| `MEDIA_KEY_ENCRYPTION_KEY`                            | `deploy/.env`                           | Password manager — **without it no processed video can be played** |
-| Other secrets (`deploy/.env`)                         | Server                                  | Password manager                                                   |
+| `MEDIA_KEY_ENCRYPTION_KEY`                            | `backend/.env` on the server            | Password manager — **without it no processed video can be played** |
+| Other secrets (`backend/.env`)                        | Server                                  | Password manager                                                   |
 
 ## 1. Database backups
 
 `database/scripts/backup.sh` (used by the `backup` container and usable on any host):
 
-- `mysqldump --single-transaction` — consistent InnoDB snapshot without locking the site;
+- `mariadb-dump` / `mysqldump --single-transaction` — consistent InnoDB snapshot without locking the site;
   includes routines, triggers (the append-only audit triggers) and events.
 - gzip + SHA-256 checksum; incomplete dumps (no `-- Dump completed` marker) are discarded.
 - Rotation: 14 daily, 8 weekly (Sundays), 12 monthly (1st of the month) — configurable.
 - The password goes through a temporary `0600` option file, never the command line.
 
 In Docker the `backup` service runs it every day at `BACKUP_TIME` (UTC) into
-`deploy/backups/` on the host and, every `VERIFY_EVERY_DAYS` days, **restores the newest dump
+`backend/backups/` on the host and, every `VERIFY_EVERY_DAYS` days, **restores the newest dump
 into a scratch database and compares row counts** with the live database
 (`verify-backup.sh`). A failure is logged as `ERROR` in `docker compose logs backup`.
 
@@ -46,14 +46,14 @@ and an incident (point-in-time recovery).
 Recommended procedure:
 
 ```bash
-cd backend/deploy
+cd /opt/edu/backend
 # 1. Restore next to production and inspect
-docker compose exec backup /opt/edu/restore.sh /backups/daily/<file>.sql.gz edu_platform_restored
-docker compose exec mysql mysql -uroot -p -e "SELECT COUNT(*) FROM edu_platform_restored.users"
+docker compose exec backup /opt/edu/restore.sh /backups/daily/<file>.sql.gz edu_institute_restored
+docker compose exec mariadb sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM edu_institute_restored.users"'
 
 # 2. Replace production (stop writers first)
 docker compose stop api worker
-docker compose exec backup /opt/edu/restore.sh /backups/daily/<file>.sql.gz edu_platform --force
+docker compose exec backup /opt/edu/restore.sh /backups/daily/<file>.sql.gz edu_institute --force
 docker compose up -d api worker
 ```
 
@@ -62,7 +62,7 @@ The API/worker must use the same `MEDIA_KEY_ENCRYPTION_KEY` as when the videos w
 ## 3. Tested
 
 Last exercised 2026-09-25 against a real server (MariaDB 10.4 on the development machine; the
-production image uses the same scripts with MySQL 8.4's own `mysqldump`):
+production backup image runs the same scripts with MariaDB 11.4's own `mariadb-dump`):
 
 | Scenario                                                 | Result                                                                      |
 | -------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -82,8 +82,8 @@ With [restic](https://restic.net) (encrypted, deduplicated) to any S3-compatible
 export RESTIC_REPOSITORY=s3:https://<endpoint>/<bucket>/edu RESTIC_PASSWORD=<strong>
 restic init
 # nightly (cron on the host), after the database dump
-MEDIA=$(docker volume inspect edu-platform_media -f '{{ .Mountpoint }}')
-restic backup "$MEDIA" /path/to/backend/deploy/backups --exclude "$MEDIA/tmp"
+MEDIA=$(docker volume inspect edu-backend_media -f '{{ .Mountpoint }}')
+restic backup "$MEDIA" /opt/edu/backend/backups --exclude "$MEDIA/tmp"
 restic forget --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune
 ```
 
@@ -92,11 +92,11 @@ videos periodically (`restic restore latest --target /tmp/check --include ...`).
 
 ## 5. Disaster recovery (new server)
 
-1. Provision the server and Docker ([deployment.md](deployment.md) §1).
-2. Restore `deploy/.env` from the password manager (same `MEDIA_KEY_ENCRYPTION_KEY`!).
-3. `docker compose up -d mysql redis`, restore the database (section 2), then
-   `docker compose run --rm migrate` (no-op if the dump is current).
+1. Provision the server and Docker, clone the projects ([deployment.md](deployment.md) §1–3).
+2. Restore `backend/.env` from the password manager (same `MEDIA_KEY_ENCRYPTION_KEY`!).
+3. `docker compose up -d mariadb redis backup`, restore the database (section 2), then
+   `docker compose up -d --build` (the migrate step is a no-op if the dump is current).
 4. Restore the media volume content from restic into the new `media` volume.
-5. `docker compose up -d`, issue certificates, verify playback of a video and a file.
+5. Start the dashboards, verify playback of a video and a file.
 
 Students keep their accounts and device bindings; their access tokens are simply refreshed.
