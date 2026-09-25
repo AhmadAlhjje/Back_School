@@ -129,7 +129,7 @@ describe('video pipeline (real FFmpeg)', () => {
     await grantTeacher(learner.userId, catalog.mathAhmad.id);
     const grant = await api().post(`/api/v1/student/videos/${videoId}/playback`).set(authHeaders(learner));
     expect(grant.status).toBe(200);
-    expect(grant.body.data.watermark.text).toContain(learner.phone);
+    expect(grant.body.data).not.toHaveProperty('watermark');
     const masterUrl: string = grant.body.data.manifestUrl;
 
     const master = await api().get(local(masterUrl));
@@ -207,6 +207,62 @@ describe('video pipeline (real FFmpeg)', () => {
     await api().post(`/api/v1/students/${learner.userId}/device/reset`).set(authHeaders(admin));
     clearMediaGuardCache();
     expect((await api().get(local(grant.body.data.manifestUrl))).status).toBe(403);
+  });
+
+  it('issues device-bound offline licenses with the video location, lists and revokes them', async () => {
+    const catalog = await createCatalog();
+    const owner = await staff('OWNER');
+    const admin = await staff('SUPER_ADMIN');
+    const { videoId, uploadId } = await uploadSample(owner, catalog.session.id);
+    await api().post(`/api/v1/videos/${videoId}/upload/complete`).set(authHeaders(owner));
+    await processVideoJob(uploadId);
+
+    const learner = await student();
+    // No access yet: no license.
+    const denied = await api()
+      .post(`/api/v1/student/videos/${videoId}/offline-license`)
+      .set(authHeaders(learner));
+    expect(denied.body.error.code).toBe('ACCESS_DENIED');
+    await grantSubject(learner.userId, catalog.math.id);
+    await grantTeacher(learner.userId, catalog.mathAhmad.id);
+
+    const issued = await api()
+      .post(`/api/v1/student/videos/${videoId}/offline-license`)
+      .set(authHeaders(learner));
+    expect(issued.status).toBe(200);
+    expect(issued.body.data.path).toEqual({
+      subject: 'رياضيات',
+      teacher: 'أحمد',
+      topic: 'التفاضل',
+      session: 'الجلسة الأولى',
+    });
+    expect(issued.body.data.renditions.length).toBeGreaterThan(0);
+    const licenseId = issued.body.data.licenseId as string;
+
+    // Valid for a whole year by default.
+    const days = (new Date(issued.body.data.expiresAt).getTime() - Date.now()) / 86_400_000;
+    expect(Math.round(days)).toBe(365);
+
+    const listed = await api().get('/api/v1/student/offline-licenses').set(authHeaders(learner));
+    expect(listed.body.data.licenses.map((l: { licenseId: string }) => l.licenseId)).toEqual([licenseId]);
+
+    const removed = await api()
+      .delete(`/api/v1/student/offline-licenses/${licenseId}`)
+      .set(authHeaders(learner));
+    expect(removed.status).toBe(200);
+    expect(
+      (await api().get('/api/v1/student/offline-licenses').set(authHeaders(learner))).body.data.licenses,
+    ).toEqual([]);
+
+    // The super admin can turn offline downloads off.
+    await api()
+      .patch('/api/v1/admin/settings')
+      .set(authHeaders(admin))
+      .send({ offlineDownloadsEnabled: false });
+    const disabled = await api()
+      .post(`/api/v1/student/videos/${videoId}/offline-license`)
+      .set(authHeaders(learner));
+    expect(disabled.body.error.code).toBe('OFFLINE_DISABLED');
   });
 
   it('rejects wrong chunk sizes and incomplete uploads', async () => {

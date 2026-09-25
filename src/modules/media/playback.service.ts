@@ -3,7 +3,6 @@ import type { AuthContext } from '../../core/auth/auth-context.js';
 import { prisma } from '../../core/database/prisma.js';
 import { AppError } from '../../core/errors/app-error.js';
 import { assertFileAccess, assertVideoAccess } from '../access/access-policy.js';
-import { getSettings } from '../settings/settings.service.js';
 import { FILE_TOKEN_TTL_SECONDS, playbackTtlSeconds, signMediaToken } from './media-token.js';
 
 const MEDIA_BASE = `${config.apiBaseUrl}/api/v1/media`;
@@ -14,14 +13,10 @@ function manifestUrl(videoId: string, token: string) {
 
 /**
  * Student playback grant (spec §102): token → session → device → student → access → READY,
- * then a temporary, device-bound manifest URL. Includes the watermark text when enabled.
+ * then a temporary, device-bound manifest URL.
  */
 export async function issueStudentPlayback(auth: AuthContext, videoId: string) {
   const video = await assertVideoAccess(auth.userId, videoId);
-  const [student, settings] = await Promise.all([
-    prisma.user.findUniqueOrThrow({ where: { id: auth.userId }, select: { name: true, phone: true } }),
-    getSettings(),
-  ]);
   const { token, expiresAt } = signMediaToken(
     {
       kind: 'video',
@@ -39,7 +34,6 @@ export async function issueStudentPlayback(auth: AuthContext, videoId: string) {
     durationSeconds: video.durationSeconds,
     manifestUrl: manifestUrl(video.id, token),
     expiresAt,
-    watermark: settings.watermarkEnabled ? { text: `${student.name} • ${student.phone}` } : null,
   };
 }
 

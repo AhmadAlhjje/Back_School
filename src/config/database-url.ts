@@ -11,7 +11,10 @@ export interface DatabaseSettings {
 export const DATABASE_NAME_PATTERN = /^[A-Za-z0-9_]+$/;
 
 /** `mysql://user:password@host:port/name` (no password part when the password is empty, as in XAMPP). */
-export function buildDatabaseUrl(settings: DatabaseSettings, database: string | null = settings.name): string {
+export function buildDatabaseUrl(
+  settings: DatabaseSettings,
+  database: string | null = settings.name,
+): string {
   const user = encodeURIComponent(settings.user);
   const auth = settings.password ? `${user}:${encodeURIComponent(settings.password)}` : user;
   return `mysql://${auth}@${settings.host}:${settings.port}/${database ?? ''}`;

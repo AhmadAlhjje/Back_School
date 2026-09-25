@@ -283,7 +283,8 @@ describe('student authentication and device binding', () => {
     expect(await prisma.auditLog.count({ where: { action: 'REFRESH_TOKEN_REUSE' } })).toBe(1);
   });
 
-  it('keeps self-registration closed unless enabled', async () => {
+  it('refuses self-registration when the super admin turned it off', async () => {
+    await prisma.systemSetting.create({ data: { key: 'studentSelfRegistration', value: false } });
     const res = await api()
       .post('/api/v1/auth/student/register')
       .send({ name: 'طالب جديد', phone: '0933333333', password: 'Student123', device: newDevice() });
@@ -291,8 +292,9 @@ describe('student authentication and device binding', () => {
     expect(res.body.error.code).toBe('REGISTRATION_DISABLED');
   });
 
-  it('registers a student when self-registration is enabled', async () => {
-    await prisma.systemSetting.create({ data: { key: 'studentSelfRegistration', value: true } });
+  it('lets students create their own account by default', async () => {
+    const config = await api().get('/api/v1/public/config');
+    expect(config.body.data.studentSelfRegistration).toBe(true);
     const device = newDevice();
     const res = await api()
       .post('/api/v1/auth/student/register')
@@ -310,7 +312,6 @@ describe('student authentication and device binding', () => {
   });
 
   it('rejects weak passwords on registration', async () => {
-    await prisma.systemSetting.create({ data: { key: 'studentSelfRegistration', value: true } });
     const res = await api()
       .post('/api/v1/auth/student/register')
       .send({ name: 'طالب', phone: '0944444444', password: 'short', device: newDevice() });

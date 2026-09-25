@@ -11,10 +11,19 @@ import { prisma } from '../../src/core/database/prisma.js';
 import { getMemoryQueues } from '../../src/core/queue/queues.js';
 import { EDUCATIONAL_FILE_TYPES } from '../../src/core/storage/file-types.js';
 import type { ReceivedFile } from '../../src/core/storage/multipart.js';
-import { ensureStorageDir, resolveStorageKey, StorageArea, storageKey } from '../../src/core/storage/storage.js';
+import {
+  ensureStorageDir,
+  resolveStorageKey,
+  StorageArea,
+  storageKey,
+} from '../../src/core/storage/storage.js';
 import { uploadFile } from '../../src/modules/files/files.service.js';
 import { deliverNotification } from '../../src/modules/notifications/notifications.service.js';
-import { completeUpload, createVideoUpload, receiveChunk } from '../../src/modules/videos/video-upload.service.js';
+import {
+  completeUpload,
+  createVideoUpload,
+  receiveChunk,
+} from '../../src/modules/videos/video-upload.service.js';
 import { startEmbeddedWorker } from '../../src/workers/embedded.js';
 import type { DemoCatalog } from './demo-data.js';
 
@@ -98,11 +107,25 @@ async function generateSampleVideo(log: (line: string) => void): Promise<string 
       config.media.ffmpegPath,
       [
         '-y',
-        '-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=25',
-        '-f', 'lavfi', '-i', 'sine=frequency=330:sample_rate=44100',
-        '-t', '20',
-        '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
-        '-c:a', 'aac', '-shortest',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=1280x720:rate=25',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=330:sample_rate=44100',
+        '-t',
+        '20',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-shortest',
         output,
       ],
       { windowsHide: true },

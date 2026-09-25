@@ -76,12 +76,18 @@ describe('student management', () => {
     expect(relogin.body.error.code).toBe('ACCOUNT_DISABLED');
   });
 
-  it('staff password reset revokes sessions and the new password works', async () => {
+  it('only the super admin resets a student password; it revokes sessions and the new password works', async () => {
     const owner = await staff('OWNER');
+    const admin = await staff('SUPER_ADMIN');
     const learner = await student();
-    await api()
+    const byOwner = await api()
       .post(`/api/v1/students/${learner.userId}/reset-password`)
       .set(authHeaders(owner))
+      .send({ newPassword: 'Owner9999x' });
+    expect(byOwner.status).toBe(403);
+    await api()
+      .post(`/api/v1/students/${learner.userId}/reset-password`)
+      .set(authHeaders(admin))
       .send({ newPassword: 'Reset12345' });
     expect((await api().get('/api/v1/student/home').set(authHeaders(learner))).status).toBe(401);
     const login = await api()

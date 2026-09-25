@@ -68,10 +68,31 @@ export async function issueOfflineLicense(auth: AuthContext, videoId: string) {
     bandwidth: r.bandwidth,
   }));
   const base = `${config.apiBaseUrl}/api/v1/media/videos/${videoId}`;
+  const place = await prisma.session.findUniqueOrThrow({
+    where: { id: video.sessionId },
+    select: {
+      title: true,
+      topic: {
+        select: {
+          title: true,
+          subjectTeacher: {
+            select: { subject: { select: { name: true } }, teacher: { select: { name: true } } },
+          },
+        },
+      },
+    },
+  });
   return {
     licenseId: license.id,
     videoId,
     title: video.title,
+    // Where the video lives, so the app keeps downloads organized: subject › teacher › lesson › session.
+    path: {
+      subject: place.topic.subjectTeacher.subject.name,
+      teacher: place.topic.subjectTeacher.teacher.name,
+      topic: place.topic.title,
+      session: place.title,
+    },
     durationSeconds: video.durationSeconds,
     expiresAt,
     renditions: renditions.map((rendition) => ({

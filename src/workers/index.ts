@@ -42,7 +42,9 @@ async function handleVideo(job: Job<VideoJobData>) {
 
 async function main() {
   if (config.queueDriver !== 'redis') {
-    logger.error('REDIS_URL is not set: background jobs already run inside the API process (npm run dev / npm start).');
+    logger.error(
+      'REDIS_URL is not set: background jobs already run inside the API process (npm run dev / npm start).',
+    );
     process.exit(1);
   }
   await ensureStorageLayout();
@@ -77,7 +79,11 @@ async function main() {
 
   const { maintenance } = getQueues();
   for (const { task, everyMs } of MAINTENANCE_SCHEDULE) {
-    await maintenance.upsertJobScheduler(`schedule-${task}`, { every: everyMs }, { name: task, data: { task } });
+    await maintenance.upsertJobScheduler(
+      `schedule-${task}`,
+      { every: everyMs },
+      { name: task, data: { task } },
+    );
   }
   logger.info({ concurrency: config.media.workerConcurrency }, 'Worker started');
 

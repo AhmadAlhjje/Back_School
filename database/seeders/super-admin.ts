@@ -28,7 +28,8 @@ export async function ensureSuperAdmin(input: SuperAdminInput): Promise<'created
   assertStrongPassword(input.password);
   const existing = await prisma.user.findUnique({ where: { phone } });
   if (existing) {
-    if (existing.role !== 'SUPER_ADMIN') throw new Error(`Phone ${phone} already belongs to a ${existing.role} account.`);
+    if (existing.role !== 'SUPER_ADMIN')
+      throw new Error(`Phone ${phone} already belongs to a ${existing.role} account.`);
     return 'exists';
   }
   await prisma.user.create({

@@ -122,8 +122,8 @@ export const studentsModule: ApiModule = {
     route({
       method: 'post',
       path: '/:id/reset-password',
-      summary: 'Set a new password for a student (ends all sessions)',
-      roles: STAFF_ROLES,
+      summary: 'Set a new password for a student (ends all sessions) — super admin only',
+      roles: ADMIN_ONLY,
       params: idParams,
       body: z.object({ newPassword: password }),
       handler: async ({ req, params, body }) => {

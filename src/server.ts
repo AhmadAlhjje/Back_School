@@ -13,7 +13,10 @@ async function main() {
   const embeddedWorker = config.queueDriver === 'memory' ? await startEmbeddedWorker() : null;
   const app = createApp();
   const server = app.listen(config.port, () => {
-    logger.info({ port: config.port, env: config.env, jobs: config.queueDriver }, `API listening on ${config.apiBaseUrl}`);
+    logger.info(
+      { port: config.port, env: config.env, jobs: config.queueDriver },
+      `API listening on ${config.apiBaseUrl}`,
+    );
   });
   // Chunk uploads on slow connections can take a while; keep sockets reasonably long-lived.
   server.requestTimeout = 10 * 60 * 1000;

@@ -14,15 +14,15 @@ runs them (`prisma.config.ts`).
 
 ### Identity and security
 
-| Table | Purpose | Key constraints |
-|---|---|---|
-| `users` | Every account: role `SUPER_ADMIN / OWNER / STUDENT`, status `ACTIVE / DISABLED`, Argon2id hash, `password_changed_at`, archive columns | unique `phone` |
-| `student_profiles` | Student-only data: grade, source (`STAFF_CREATED / SELF_REGISTERED`) | 1–1 with `users` |
-| `devices` | Bound student devices: identifier **hash**, platform, model, OS, app version, first/last seen, last IP, `status ACTIVE/RESET` | unique nullable `active_student_id` → **one active device per student** |
-| `auth_sessions` | One row per login: portal, device, IP, user agent, `expires_at`, `revoked_at` + reason | checked on every request |
-| `refresh_tokens` | SHA-256 of each refresh token, `rotated_at` for reuse detection | unique `token_hash` |
-| `audit_logs` | Actor, role, action, entity, IP, user agent, JSON metadata | **append-only** (DB triggers block UPDATE/DELETE) |
-| `system_settings` | Key/value settings validated by the API (institute name, registration, watermark, offline downloads, offline license days) | |
+| Table              | Purpose                                                                                                                                                    | Key constraints                                                         |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `users`            | Every account: role `SUPER_ADMIN / OWNER / STUDENT`, status `ACTIVE / DISABLED`, Argon2id hash, `password_changed_at`, archive columns                     | unique `phone`                                                          |
+| `student_profiles` | Student-only data: grade, source (`STAFF_CREATED / SELF_REGISTERED`)                                                                                       | 1–1 with `users`                                                        |
+| `devices`          | Bound student devices: identifier **hash**, platform, model, OS, app version, first/last seen, last IP, `status ACTIVE/RESET`                              | unique nullable `active_student_id` → **one active device per student** |
+| `auth_sessions`    | One row per login: portal, device, IP, user agent, `expires_at`, `revoked_at` + reason                                                                     | checked on every request                                                |
+| `refresh_tokens`   | SHA-256 of each refresh token, `rotated_at` for reuse detection                                                                                            | unique `token_hash`                                                     |
+| `audit_logs`       | Actor, role, action, entity, IP, user agent, JSON metadata                                                                                                 | **append-only** (DB triggers block UPDATE/DELETE)                       |
+| `system_settings`  | Key/value settings validated by the API (institute name, student self-registration — on by default, offline downloads, offline license days — default 365) |                                                                         |
 
 ### Catalog
 
@@ -32,28 +32,28 @@ subject_teachers 1─* topics 1─* sessions 1─* videos (1─1 video_assets, 1
 files → exactly one of: subject | subject_teacher | topic | session
 ```
 
-| Table | Notes |
-|---|---|
-| `grades` | `sort_order`; archived grades hide their subtree |
-| `subjects` | belongs to a grade; unique active name per grade (service rule) |
-| `teachers` | name, phone, description, photo key |
-| `subject_teachers` | unique `(subject_id, teacher_id)`; archiving = unassigning (content kept) |
-| `topics` | lesson / research topic under a subject-teacher |
-| `sessions` | class session under a topic |
-| `videos` | status `UPLOADING / PROCESSING / READY / FAILED`, duration, `ready_at`, failure reason |
-| `video_assets` | HLS location, renditions, **sealed AES key** (AES-256-GCM), IV |
-| `upload_jobs` | chunked upload state: size, chunk size/count, status, attempts, timings |
-| `files` | kind, extension, MIME, size, storage key, scope + one parent column; CHECK constraint `files_scope_parent_check` guarantees exactly one parent matching `scope` |
+| Table              | Notes                                                                                                                                                           |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `grades`           | `sort_order`; archived grades hide their subtree                                                                                                                |
+| `subjects`         | belongs to a grade; unique active name per grade (service rule)                                                                                                 |
+| `teachers`         | name, phone, description, photo key                                                                                                                             |
+| `subject_teachers` | unique `(subject_id, teacher_id)`; archiving = unassigning (content kept)                                                                                       |
+| `topics`           | lesson / research topic under a subject-teacher                                                                                                                 |
+| `sessions`         | class session under a topic                                                                                                                                     |
+| `videos`           | status `UPLOADING / PROCESSING / READY / FAILED`, duration, `ready_at`, failure reason                                                                          |
+| `video_assets`     | HLS location, renditions, **sealed AES key** (AES-256-GCM), IV                                                                                                  |
+| `upload_jobs`      | chunked upload state: size, chunk size/count, status, attempts, timings                                                                                         |
+| `files`            | kind, extension, MIME, size, storage key, scope + one parent column; CHECK constraint `files_scope_parent_check` guarantees exactly one parent matching `scope` |
 
 ### Access, notifications, offline
 
-| Table | Notes |
-|---|---|
-| `student_subject_access` | unique `(student_id, subject_id)`; `source`, `granted_by`, `expires_at`, `revoked_at` |
-| `student_teacher_access` | unique `(student_id, subject_teacher_id)`; same columns |
-| `offline_licenses` | student, device, video, `expires_at`, `revoked_at` — device-bound offline copies |
-| `notifications` | type (`NEW_LESSON / NEW_VIDEO / NEW_FILE / ACCOUNT / SYSTEM`), title, body, JSON data |
-| `notification_recipients` | unique `(notification_id, user_id)`, `read_at` |
+| Table                     | Notes                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------- |
+| `student_subject_access`  | unique `(student_id, subject_id)`; `source`, `granted_by`, `expires_at`, `revoked_at` |
+| `student_teacher_access`  | unique `(student_id, subject_teacher_id)`; same columns                               |
+| `offline_licenses`        | student, device, video, `expires_at`, `revoked_at` — device-bound offline copies      |
+| `notifications`           | type (`NEW_LESSON / NEW_VIDEO / NEW_FILE / ACCOUNT / SYSTEM`), title, body, JSON data |
+| `notification_recipients` | unique `(notification_id, user_id)`, `read_at`                                        |
 
 A grant is **active** when `revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())`.
 Revoking keeps the row (history); re-opening clears `revoked_at`.
@@ -68,9 +68,9 @@ name/title indexes for search. See `schema.prisma` for the full list.
 
 ## Migrations
 
-| Migration | Content |
-|---|---|
-| `20260923225929_init` | Full schema + `files_scope_parent_check` |
+| Migration                              | Content                                                        |
+| -------------------------------------- | -------------------------------------------------------------- |
+| `20260923225929_init`                  | Full schema + `files_scope_parent_check`                       |
 | `20260925010000_audit_log_append_only` | Triggers `audit_logs_block_update` / `audit_logs_block_delete` |
 
 ```bash

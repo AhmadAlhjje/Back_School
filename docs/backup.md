@@ -2,12 +2,12 @@
 
 What must be protected, and how:
 
-| Data | Where | Backed up by |
-|---|---|---|
-| Database (accounts, catalog, access, audit, settings) | MySQL volume | Nightly `mysqldump` (this document) + binlogs |
-| Media (HLS videos, files, teacher photos) | `media` volume (`/var/lib/edu/storage`) | File-level sync (section 4) |
-| `MEDIA_KEY_ENCRYPTION_KEY` | `deploy/.env` | Password manager — **without it no processed video can be played** |
-| Other secrets (`deploy/.env`) | Server | Password manager |
+| Data                                                  | Where                                   | Backed up by                                                       |
+| ----------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
+| Database (accounts, catalog, access, audit, settings) | MySQL volume                            | Nightly `mysqldump` (this document) + binlogs                      |
+| Media (HLS videos, files, teacher photos)             | `media` volume (`/var/lib/edu/storage`) | File-level sync (section 4)                                        |
+| `MEDIA_KEY_ENCRYPTION_KEY`                            | `deploy/.env`                           | Password manager — **without it no processed video can be played** |
+| Other secrets (`deploy/.env`)                         | Server                                  | Password manager                                                   |
 
 ## 1. Database backups
 
@@ -64,13 +64,13 @@ The API/worker must use the same `MEDIA_KEY_ENCRYPTION_KEY` as when the videos w
 Last exercised 2026-09-25 against a real server (MariaDB 10.4 on the development machine; the
 production image uses the same scripts with MySQL 8.4's own `mysqldump`):
 
-| Scenario | Result |
-|---|---|
-| `backup.sh` | dump + `.sha256` written; the dump contains both append-only audit triggers |
-| `restore.sh` into an empty side-by-side database | 23 tables, same row counts, triggers restored |
-| `restore.sh` into a non-empty database without `--force` | refused |
-| `restore.sh` of a file with one modified byte | refused: checksum mismatch |
-| `verify-backup.sh` | row counts match the live database; scratch database dropped afterwards |
+| Scenario                                                 | Result                                                                      |
+| -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `backup.sh`                                              | dump + `.sha256` written; the dump contains both append-only audit triggers |
+| `restore.sh` into an empty side-by-side database         | 23 tables, same row counts, triggers restored                               |
+| `restore.sh` into a non-empty database without `--force` | refused                                                                     |
+| `restore.sh` of a file with one modified byte            | refused: checksum mismatch                                                  |
+| `verify-backup.sh`                                       | row counts match the live database; scratch database dropped afterwards     |
 
 ## 4. Media files and off-site copies
 

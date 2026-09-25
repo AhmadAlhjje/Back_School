@@ -16,16 +16,16 @@ Internet ──► edge (Nginx: TLS, dashboards, API proxy, X-Accel media)
                         certbot (renewals)
 ```
 
-| Service | Image / build | Purpose |
-|---|---|---|
-| `edge` | `deploy/nginx/Dockerfile` | Nginx: TLS, API proxy, X-Accel media, dashboards from `deploy/sites/` |
-| `api` | `Dockerfile` target `runtime` | REST API |
-| `worker` | same image, `node dist/workers/index.js` | Video processing, notifications fan-out, maintenance |
-| `migrate` | `Dockerfile` target `tools` (profile `tools`) | `npm run db:migrate`, `admin:create` |
-| `mysql` | `mysql:8.4` | Database (`deploy/mysql/conf.d/edu.cnf`) |
-| `redis` | `redis:7.4-alpine` | Queues and rate limits (password, AOF, `noeviction`) |
-| `backup` | `deploy/backup/Dockerfile` | Nightly dump + rotation + weekly restore verification |
-| `certbot` | `certbot/certbot` | Let's Encrypt renewals (webroot) |
+| Service   | Image / build                                 | Purpose                                                               |
+| --------- | --------------------------------------------- | --------------------------------------------------------------------- |
+| `edge`    | `deploy/nginx/Dockerfile`                     | Nginx: TLS, API proxy, X-Accel media, dashboards from `deploy/sites/` |
+| `api`     | `Dockerfile` target `runtime`                 | REST API                                                              |
+| `worker`  | same image, `node dist/workers/index.js`      | Video processing, notifications fan-out, maintenance                  |
+| `migrate` | `Dockerfile` target `tools` (profile `tools`) | `npm run db:migrate`, `admin:create`                                  |
+| `mysql`   | `mysql:8.4`                                   | Database (`deploy/mysql/conf.d/edu.cnf`)                              |
+| `redis`   | `redis:7.4-alpine`                            | Queues and rate limits (password, AOF, `noeviction`)                  |
+| `backup`  | `deploy/backup/Dockerfile`                    | Nightly dump + rotation + weekly restore verification                 |
+| `certbot` | `certbot/certbot`                             | Let's Encrypt renewals (webroot)                                      |
 
 ## 1. Server requirements
 
@@ -53,12 +53,12 @@ nano .env
 
 Fill every `CHANGE_ME`:
 
-| Variable | How to generate |
-|---|---|
-| `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `REDIS_PASSWORD` | `openssl rand -hex 24` (hex: safe inside URLs) |
-| `JWT_ACCESS_SECRET`, `MEDIA_TOKEN_SECRET` | `openssl rand -hex 32` |
-| `MEDIA_KEY_ENCRYPTION_KEY` | `openssl rand -base64 32` — **back this up** (see [backup.md](backup.md)) |
-| `SEED_SUPER_ADMIN_PHONE/PASSWORD` | The first super admin (password: 8+ chars, letters and digits) |
+| Variable                                                  | How to generate                                                           |
+| --------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `REDIS_PASSWORD` | `openssl rand -hex 24` (hex: safe inside URLs)                            |
+| `JWT_ACCESS_SECRET`, `MEDIA_TOKEN_SECRET`                 | `openssl rand -hex 32`                                                    |
+| `MEDIA_KEY_ENCRYPTION_KEY`                                | `openssl rand -base64 32` — **back this up** (see [backup.md](backup.md)) |
+| `SEED_SUPER_ADMIN_PHONE/PASSWORD`                         | The first super admin (password: 8+ chars, letters and digits)            |
 
 The API refuses to start with example or short secrets.
 
@@ -105,10 +105,10 @@ cd super_admin_web && npm install && npm run build       # → dist/
 
 Copy the **content** of each `dist/` folder to the server:
 
-| Project | Server folder | Domain |
-|---|---|---|
+| Project                      | Server folder                 | Domain         |
+| ---------------------------- | ----------------------------- | -------------- |
 | `institute_dashboard/dist/*` | `backend/deploy/sites/owner/` | `OWNER_DOMAIN` |
-| `super_admin_web/dist/*` | `backend/deploy/sites/admin/` | `ADMIN_DOMAIN` |
+| `super_admin_web/dist/*`     | `backend/deploy/sites/admin/` | `ADMIN_DOMAIN` |
 
 e.g. `scp -r dist/* user@server:~/backend/deploy/sites/owner/`. Nginx serves the new files
 immediately (no restart). Then open `https://admin.example.com`, sign in as the super admin,
@@ -151,15 +151,15 @@ Migrations are forward-only and additive; take a backup first (`docker compose e
 
 ## 7. Operations
 
-| Task | Command |
-|---|---|
-| Logs | `docker compose logs -f api worker` (JSON, secrets redacted) |
-| Restart the API | `docker compose restart api` |
-| Backup now | `docker compose exec backup /opt/edu/scheduler.sh now` |
-| Verify latest backup | `docker compose exec backup /opt/edu/verify-backup.sh` |
-| MySQL shell | `docker compose exec mysql mysql -uroot -p` |
-| Queue depth | `docker compose exec redis redis-cli -a "$REDIS_PASSWORD" --no-auth-warning keys 'bull:*:wait'` |
-| Swagger UI | set `ENABLE_API_DOCS=true`, `docker compose up -d api`, open `/api/docs` |
+| Task                 | Command                                                                                         |
+| -------------------- | ----------------------------------------------------------------------------------------------- |
+| Logs                 | `docker compose logs -f api worker` (JSON, secrets redacted)                                    |
+| Restart the API      | `docker compose restart api`                                                                    |
+| Backup now           | `docker compose exec backup /opt/edu/scheduler.sh now`                                          |
+| Verify latest backup | `docker compose exec backup /opt/edu/verify-backup.sh`                                          |
+| MySQL shell          | `docker compose exec mysql mysql -uroot -p`                                                     |
+| Queue depth          | `docker compose exec redis redis-cli -a "$REDIS_PASSWORD" --no-auth-warning keys 'bull:*:wait'` |
+| Swagger UI           | set `ENABLE_API_DOCS=true`, `docker compose up -d api`, open `/api/docs`                        |
 
 **Worker scaling.** `VIDEO_WORKER_CONCURRENCY` (parallel videos) and `WORKER_CPUS` bound
 FFmpeg so uploads and playback stay responsive while videos are processed.

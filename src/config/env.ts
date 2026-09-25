@@ -40,7 +40,10 @@ const envSchema = z.object({
   // Optional. Empty: background jobs run inside the API process (local development with only MySQL).
   REDIS_URL: z.preprocess(
     (value) => (value === '' ? undefined : value),
-    z.string().regex(/^rediss?:\/\//, 'REDIS_URL must be a redis:// URL').optional(),
+    z
+      .string()
+      .regex(/^rediss?:\/\//, 'REDIS_URL must be a redis:// URL')
+      .optional(),
   ),
 
   JWT_ACCESS_SECRET: secret('JWT_ACCESS_SECRET'),

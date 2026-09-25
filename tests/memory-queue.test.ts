@@ -20,7 +20,9 @@ describe('in-process job queue (no Redis)', () => {
     const calls: string[] = [];
     queue.process((data) => {
       calls.push(data);
-      return Promise.reject(data === 'permanent' ? new NonRetryableJobError('not a video') : new Error('always fails'));
+      return Promise.reject(
+        data === 'permanent' ? new NonRetryableJobError('not a video') : new Error('always fails'),
+      );
     });
     queue.add('a', 'permanent', { attempts: 5, backoffMs: 1 });
     queue.add('b', 'flaky', { attempts: 2, backoffMs: 1 });

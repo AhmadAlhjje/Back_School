@@ -9,17 +9,17 @@ screens, but they are never trusted.
 
 ## 1. Identity and sessions
 
-| Control | Implementation |
-|---|---|
-| Password hashing | Argon2id (`core/security/password.ts`); policy 8–128 chars with letters and digits |
-| Separate portals | `/auth/admin/login`, `/auth/owner/login`, `/auth/student/login`; each checks the role |
-| Access token | JWT HS256, 15 min, claims `sub, role, sid, did`; secret ≥ 32 chars, example values rejected at boot |
-| Refresh token | 256-bit random, stored as SHA-256, **rotated on every use**; replaying an old token after a 20 s grace window revokes the whole session (theft detection) |
-| Web refresh cookie | `httpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`, one cookie name per portal; the access token lives in memory only |
-| Mobile tokens | Access token in memory; refresh token in Keychain / Android Keystore (`flutter_secure_storage`) |
-| Server-side sessions | Every authenticated request loads the session: revoked, expired, disabled or archived accounts stop working immediately |
-| Password change | Revokes every other session of the account |
-| Staff password reset / disable / archive | Revokes all sessions of that account |
+| Control                                  | Implementation                                                                                                                                            |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Password hashing                         | Argon2id (`core/security/password.ts`); policy 8–128 chars with letters and digits                                                                        |
+| Separate portals                         | `/auth/admin/login`, `/auth/owner/login`, `/auth/student/login`; each checks the role                                                                     |
+| Access token                             | JWT HS256, 15 min, claims `sub, role, sid, did`; secret ≥ 32 chars, example values rejected at boot                                                       |
+| Refresh token                            | 256-bit random, stored as SHA-256, **rotated on every use**; replaying an old token after a 20 s grace window revokes the whole session (theft detection) |
+| Web refresh cookie                       | `httpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`, one cookie name per portal; the access token lives in memory only                                 |
+| Mobile tokens                            | Access token in memory; refresh token in Keychain / Android Keystore (`flutter_secure_storage`)                                                           |
+| Server-side sessions                     | Every authenticated request loads the session: revoked, expired, disabled or archived accounts stop working immediately                                   |
+| Password change                          | Revokes every other session of the account                                                                                                                |
+| Staff password reset / disable / archive | Revokes all sessions of that account                                                                                                                      |
 
 ## 2. Device binding (students)
 
@@ -44,21 +44,21 @@ screens, but they are never trusted.
 
 ## 4. Media protection
 
-| Asset | Protection |
-|---|---|
-| Storage | Private directory, never served statically. Nginx can only stream it from an `internal` location after an authorizing API response (`X-Accel-Redirect`) |
-| HLS video | AES-128 segments, random key per video; keys stored sealed with AES-256-GCM (`MEDIA_KEY_ENCRYPTION_KEY`) |
-| Playback URL | Signed media token bound to `(video, user, session, device)`; lifetime `clamp(2 × duration + 30 min, 30 min, 12 h)`; playlists are rewritten per request |
-| Key endpoint | Re-runs the full authorization (session alive, device bound, access still open) on every call and is rate-limited |
-| Files | 5-minute single-file URLs after an access check; content sniffing blocks files whose bytes do not match the extension |
-| Offline copies | Server-issued license (device-bound, expiring, revocable); segments stay encrypted at rest in app-private storage; the key only in Keychain/Keystore; playback through a loopback server on 127.0.0.1 with a random per-playback path; licenses re-synced when online and revoked copies deleted |
-| Screen capture | Android: `FLAG_SECURE` on the whole app (screenshots/recordings are black, hidden in recents). iOS: the OS cannot block screenshots; the app hides the video while recording/mirroring is active and warns after a screenshot |
-| Camera recording | Cannot be prevented by any app. A moving watermark (student name + phone) identifies the source of a leak |
-| Backups | Android `allowBackup=false` + data-extraction rules: app data (tokens, offline videos, keys) never leaves the device through cloud/device transfer |
+| Asset            | Protection                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Storage          | Private directory, never served statically. Nginx can only stream it from an `internal` location after an authorizing API response (`X-Accel-Redirect`)                                                                                                                                                                                                                                                                                               |
+| HLS video        | AES-128 segments, random key per video; keys stored sealed with AES-256-GCM (`MEDIA_KEY_ENCRYPTION_KEY`)                                                                                                                                                                                                                                                                                                                                              |
+| Playback URL     | Signed media token bound to `(video, user, session, device)`; lifetime `clamp(2 × duration + 30 min, 30 min, 12 h)`; playlists are rewritten per request                                                                                                                                                                                                                                                                                              |
+| Key endpoint     | Re-runs the full authorization (session alive, device bound, access still open) on every call and is rate-limited                                                                                                                                                                                                                                                                                                                                     |
+| Files            | 5-minute single-file URLs after an access check; content sniffing blocks files whose bytes do not match the extension                                                                                                                                                                                                                                                                                                                                 |
+| Offline copies   | Server-issued license (device-bound, expiring, revocable); segments stay encrypted at rest in app-private storage; the key only in Keychain/Keystore; playback through a loopback server on 127.0.0.1 with a random per-playback path; licenses re-synced when online and revoked copies deleted                                                                                                                                                      |
+| Screen capture   | Android: `FLAG_SECURE` on the whole app (screenshots/recordings are black, hidden in recents) and the app's audio cannot be captured by any other app (`allowAudioPlaybackCapture=false`, capture policy NONE), so a recording has neither picture nor sound; Android 15+ also reports recording and the player stops. iOS: the OS cannot block screenshots; the app stops the video while recording/mirroring is active and warns after a screenshot |
+| Camera recording | Cannot be prevented by any app                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Backups          | Android `allowBackup=false` + data-extraction rules: app data (tokens, offline videos, keys) never leaves the device through cloud/device transfer                                                                                                                                                                                                                                                                                                    |
 
 This is **maximum practical protection, not DRM-grade protection.** A determined attacker with a
 rooted/jailbroken device can still defeat client-side controls; the server-side controls
-(per-request authorization, short-lived device-bound tokens, revocation, audit, watermark)
+(per-request authorization, short-lived device-bound tokens, revocation, audit)
 limit and expose that. Widevine/FairPlay DRM can be added later behind the same playback API.
 
 ## 5. Transport and web
@@ -72,16 +72,16 @@ limit and expose that. Widevine/FairPlay DRM can be added later behind the same 
 
 ## 6. Abuse controls
 
-| Limiter | Limit |
-|---|---|
-| Login per IP | 50 / 15 min |
-| Login per account | 10 / 15 min |
-| Registration per IP | 10 / hour |
-| Refresh per IP | 120 / 15 min |
-| Password change per user | 10 / 15 min |
-| Playback grants per user | 30 / min |
-| File grants per user | 60 / min |
-| Key requests per IP | 60 / min |
+| Limiter                  | Limit        |
+| ------------------------ | ------------ |
+| Login per IP             | 50 / 15 min  |
+| Login per account        | 10 / 15 min  |
+| Registration per IP      | 10 / hour    |
+| Refresh per IP           | 120 / 15 min |
+| Password change per user | 10 / 15 min  |
+| Playback grants per user | 30 / min     |
+| File grants per user     | 60 / min     |
+| Key requests per IP      | 60 / min     |
 
 Limits are stored in Redis when configured (shared by all API processes), otherwise in the single API
 process's memory. Nginx adds coarse per-IP limits in production.

@@ -31,7 +31,10 @@ async function ensureEnvFile(): Promise<void> {
   const filled = example
     .replace(/^JWT_ACCESS_SECRET=CHANGE_ME$/m, `JWT_ACCESS_SECRET=${randomBytes(32).toString('hex')}`)
     .replace(/^MEDIA_TOKEN_SECRET=CHANGE_ME$/m, `MEDIA_TOKEN_SECRET=${randomBytes(32).toString('hex')}`)
-    .replace(/^MEDIA_KEY_ENCRYPTION_KEY=CHANGE_ME$/m, `MEDIA_KEY_ENCRYPTION_KEY=${randomBytes(32).toString('base64')}`);
+    .replace(
+      /^MEDIA_KEY_ENCRYPTION_KEY=CHANGE_ME$/m,
+      `MEDIA_KEY_ENCRYPTION_KEY=${randomBytes(32).toString('base64')}`,
+    );
   await fs.writeFile('.env', filled, 'utf8');
   process.loadEnvFile('.env');
   log('✓ .env created from .env.example (new random secrets)');
@@ -73,7 +76,9 @@ function checkFfmpeg(): void {
   const binary = process.env.FFMPEG_PATH || 'ffmpeg';
   const result = spawnSync(binary, ['-version'], { stdio: 'ignore', windowsHide: true });
   if (result.status !== 0) {
-    log(`! FFmpeg not found ("${binary}"): uploads work, but videos cannot be processed until FFmpeg is installed.`);
+    log(
+      `! FFmpeg not found ("${binary}"): uploads work, but videos cannot be processed until FFmpeg is installed.`,
+    );
   }
 }
 

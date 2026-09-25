@@ -33,10 +33,27 @@ async function main() {
   if (!out) throw new Error('Usage: app-live-setup <output.json>');
   if (!ownerPhone || !ownerPassword) throw new Error('Set E2E_OWNER_PHONE and E2E_OWNER_PASSWORD');
 
+  // The whole chain must be active: an archived grade/subject/teacher hides its videos from students.
   const video = await prisma.video.findFirst({
-    where: { status: 'READY', archivedAt: null },
+    where: {
+      status: 'READY',
+      archivedAt: null,
+      session: {
+        archivedAt: null,
+        topic: {
+          archivedAt: null,
+          subjectTeacher: {
+            archivedAt: null,
+            teacher: { archivedAt: null },
+            subject: { archivedAt: null, grade: { archivedAt: null } },
+          },
+        },
+      },
+    },
     orderBy: { readyAt: 'desc' },
-    include: { session: { include: { topic: { include: { subjectTeacher: { include: { subject: true } } } } } } },
+    include: {
+      session: { include: { topic: { include: { subjectTeacher: { include: { subject: true } } } } } },
+    },
   });
   if (!video) throw new Error('No READY video: run `npm run e2e` first');
   const { session } = video;
@@ -53,9 +70,14 @@ async function main() {
     phone,
     password,
   });
-  await call('PUT', `/access/students/${student.id}/subject-teachers/${subjectTeacher.id}`, owner.accessToken, {
-    open: true,
-  });
+  await call(
+    'PUT',
+    `/access/students/${student.id}/subject-teachers/${subjectTeacher.id}`,
+    owner.accessToken,
+    {
+      open: true,
+    },
+  );
 
   const pdf = Buffer.from(
     '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +

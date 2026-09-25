@@ -33,7 +33,7 @@ x-backend-env: &backend-env
   SESSION_MAX_AGE_DAYS: ${SESSION_MAX_AGE_DAYS:-90}
   MEDIA_TOKEN_SECRET: ${MEDIA_TOKEN_SECRET}
   MEDIA_KEY_ENCRYPTION_KEY: ${MEDIA_KEY_ENCRYPTION_KEY}
-  COOKIE_SECURE: "true"
+  COOKIE_SECURE: 'true'
   STORAGE_PATH: /var/lib/edu/storage
   UPLOAD_CHUNK_SIZE_MB: ${UPLOAD_CHUNK_SIZE_MB:-8}
   MAX_VIDEO_SIZE_GB: ${MAX_VIDEO_SIZE_GB:-20}
@@ -43,19 +43,19 @@ x-backend-env: &backend-env
   HLS_SEGMENT_SECONDS: ${HLS_SEGMENT_SECONDS:-6}
   FFMPEG_PRESET: ${FFMPEG_PRESET:-veryfast}
   VIDEO_WORKER_CONCURRENCY: ${VIDEO_WORKER_CONCURRENCY:-1}
-  MEDIA_ACCEL_REDIRECT: "true"
+  MEDIA_ACCEL_REDIRECT: 'true'
   MEDIA_ACCEL_PREFIX: /protected-media
   ENABLE_API_DOCS: ${ENABLE_API_DOCS:-false}
   SEED_SUPER_ADMIN_NAME: ${SEED_SUPER_ADMIN_NAME:-}
   SEED_SUPER_ADMIN_PHONE: ${SEED_SUPER_ADMIN_PHONE:-}
   SEED_SUPER_ADMIN_PASSWORD: ${SEED_SUPER_ADMIN_PASSWORD:-}
-  SEED_DEMO_DATA: "false"
+  SEED_DEMO_DATA: 'false'
 
 x-logging: &logging
   driver: json-file
   options:
     max-size: 20m
-    max-file: "5"
+    max-file: '5'
 
 services:
   mysql:
@@ -71,7 +71,7 @@ services:
       - mysql-data:/var/lib/mysql
       - ./mysql/conf.d:/etc/mysql/conf.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent']
       interval: 10s
       timeout: 5s
       retries: 12
@@ -88,13 +88,13 @@ services:
       - --requirepass
       - ${REDIS_PASSWORD}
       - --appendonly
-      - "yes"
+      - 'yes'
       - --maxmemory-policy
       - noeviction
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      test: ['CMD-SHELL', 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG']
       interval: 10s
       timeout: 5s
       retries: 6
@@ -125,7 +125,7 @@ services:
     image: edu-platform/backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment: *backend-env
-    command: ["node", "dist/server.js"]
+    command: ['node', 'dist/server.js']
     volumes:
       - media:/var/lib/edu/storage
     depends_on:
@@ -145,7 +145,7 @@ services:
     image: edu-platform/backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment: *backend-env
-    command: ["node", "dist/workers/index.js"]
+    command: ['node', 'dist/workers/index.js']
     # FFmpeg transcoding: keep the API responsive by bounding the worker.
     cpus: ${WORKER_CPUS:-2}
     volumes:
@@ -165,8 +165,8 @@ services:
     image: edu-platform/edge:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
     environment:
       API_DOMAIN: ${API_DOMAIN}
       OWNER_DOMAIN: ${OWNER_DOMAIN}
@@ -183,7 +183,7 @@ services:
     depends_on:
       - api
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/nginx-health || exit 1"]
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1/nginx-health || exit 1']
       interval: 30s
       timeout: 5s
       retries: 3
@@ -194,7 +194,12 @@ services:
   certbot:
     image: certbot/certbot:v3.1.0
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"]
+    entrypoint:
+      [
+        '/bin/sh',
+        '-c',
+        'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done',
+      ]
     volumes:
       - certbot-conf:/etc/letsencrypt
       - certbot-www:/var/www/certbot

@@ -100,20 +100,29 @@ export class MemoryQueue<T> {
   }
 
   private async execute(job: QueuedJob<T>): Promise<void> {
-    const context = { attempt: job.attempt, maxAttempts: job.options.attempts, signal: this.controller.signal };
+    const context = {
+      attempt: job.attempt,
+      maxAttempts: job.options.attempts,
+      signal: this.controller.signal,
+    };
     try {
       await this.handler!(job.data, context);
       this.known.delete(job.id);
       logger.info({ queue: this.name, jobId: job.id }, 'Job completed');
     } catch (error) {
-      const retry = !this.closed && !(error instanceof NonRetryableJobError) && job.attempt < job.options.attempts;
+      const retry =
+        !this.closed && !(error instanceof NonRetryableJobError) && job.attempt < job.options.attempts;
       if (!retry) {
         this.known.delete(job.id);
-        if (!this.closed) logger.error({ queue: this.name, jobId: job.id, attempt: job.attempt, err: error }, 'Job failed');
+        if (!this.closed)
+          logger.error({ queue: this.name, jobId: job.id, attempt: job.attempt, err: error }, 'Job failed');
         return;
       }
       const delay = job.options.backoffMs * 2 ** (job.attempt - 1);
-      logger.warn({ queue: this.name, jobId: job.id, attempt: job.attempt, retryInMs: delay, err: error }, 'Job failed, retrying');
+      logger.warn(
+        { queue: this.name, jobId: job.id, attempt: job.attempt, retryInMs: delay, err: error },
+        'Job failed, retrying',
+      );
       const timer = setTimeout(() => {
         this.retryTimers.delete(timer);
         this.waiting.push({ ...job, attempt: job.attempt + 1 });

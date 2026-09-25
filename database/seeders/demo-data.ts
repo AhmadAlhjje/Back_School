@@ -100,10 +100,17 @@ export async function seedDemoData(): Promise<DemoCatalog | null> {
       });
       if (account.phone === DEMO_ACCOUNTS.students[0]!.phone) {
         await tx.studentSubjectAccess.create({ data: { studentId: student.id, subjectId: math!.id } });
-        await tx.studentTeacherAccess.create({ data: { studentId: student.id, subjectTeacherId: mathAhmad.id } });
+        await tx.studentTeacherAccess.create({
+          data: { studentId: student.id, subjectTeacherId: mathAhmad.id },
+        });
       }
     }
 
-    return { ownerId: owner.id, subjectId: math!.id, subjectTeacherId: mathAhmad.id, sessionId: firstSessionId! };
+    return {
+      ownerId: owner.id,
+      subjectId: math!.id,
+      subjectTeacherId: mathAhmad.id,
+      sessionId: firstSessionId!,
+    };
   });
 }

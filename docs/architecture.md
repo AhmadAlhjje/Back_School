@@ -11,17 +11,17 @@ deployment, backup, development, internals).
 
 ## 1. Phase 0 — Workspace analysis (2026-09-24)
 
-| Item | Finding | Decision |
-|------|---------|----------|
-| Workspace | Empty except the spec file | Build from scratch in `education_platform/` |
-| Node.js | v24.11.0, npm 11.6 | Node 24 LTS for backend and web tooling |
-| Flutter / Dart | 3.47.2 / 3.13.2 (stable) | Dart 3 null-safe, Material 3 |
-| Android | SDK 36, JDK 17 | Android build verified with `flutter build apk` |
-| iOS | Windows host — no Xcode | iOS code is written but can only be compiled on macOS |
-| MySQL | XAMPP MariaDB 10.4 on :3306 | Dev database. Production target is **MySQL 8** |
-| Redis | Not on Windows | Optional in development (jobs run inside the API without it). Prod: Redis 7 |
-| FFmpeg | 7.1.1 on PATH | Used by the video worker (also installed in the prod image) |
-| Docker | Installed, **not used locally** (owner's choice) | Docker files are deliverables for the VPS only |
+| Item           | Finding                                          | Decision                                                                    |
+| -------------- | ------------------------------------------------ | --------------------------------------------------------------------------- |
+| Workspace      | Empty except the spec file                       | Build from scratch in `education_platform/`                                 |
+| Node.js        | v24.11.0, npm 11.6                               | Node 24 LTS for backend and web tooling                                     |
+| Flutter / Dart | 3.47.2 / 3.13.2 (stable)                         | Dart 3 null-safe, Material 3                                                |
+| Android        | SDK 36, JDK 17                                   | Android build verified with `flutter build apk`                             |
+| iOS            | Windows host — no Xcode                          | iOS code is written but can only be compiled on macOS                       |
+| MySQL          | XAMPP MariaDB 10.4 on :3306                      | Dev database. Production target is **MySQL 8**                              |
+| Redis          | Not on Windows                                   | Optional in development (jobs run inside the API without it). Prod: Redis 7 |
+| FFmpeg         | 7.1.1 on PATH                                    | Used by the video worker (also installed in the prod image)                 |
+| Docker         | Installed, **not used locally** (owner's choice) | Docker files are deliverables for the VPS only                              |
 
 Pinned toolchain (stable majors with full ecosystem support):
 TypeScript 6.0 (typescript-eslint supports `<6.1`), Prisma 7.10 (8.x is still RC),
@@ -57,6 +57,7 @@ TanStack Query 5, Tailwind CSS 4, Vitest 4.
 ```
 
 Rules:
+
 - No client talks to MySQL, Redis or storage directly. Everything goes through the API.
 - The API and the worker are two entrypoints of one codebase (`backend`), deployed as two processes
   in production. Without Redis (local development) the API runs the background jobs itself, so
@@ -122,10 +123,10 @@ Full schema reference: [database.md](database.md).
 
 Two independent grants per student:
 
-| Table | Grants |
-|-------|--------|
-| `student_subject_access (student, subject)` | Subject is open |
-| `student_teacher_access (student, subjectTeacher)` | Teacher is open *within that subject* |
+| Table                                              | Grants                                |
+| -------------------------------------------------- | ------------------------------------- |
+| `student_subject_access (student, subject)`        | Subject is open                       |
+| `student_teacher_access (student, subjectTeacher)` | Teacher is open _within that subject_ |
 
 Effective access to any teacher content (topic/session/video/file):
 
@@ -194,7 +195,8 @@ Upload → storage → queue → FFmpeg → HLS → AES-128 → READY. Details i
   revocable offline license. Playback goes through an in-app loopback server bound to
   127.0.0.1 with a per-playback nonce. The app syncs licenses and purges revoked content.
 - **Capture protection**: Android `FLAG_SECURE`; iOS capture detection hides the video while
-  recording/mirroring is active. Moving watermark (name + phone) deters camera recording.
+  recording/mirroring is active. Android: the app's sound cannot be captured by other apps, and on
+  Android 15+ playback stops while the screen is recorded.
   This is maximum practical protection, not a guarantee (see [security.md](security.md)).
 
 ---
@@ -251,15 +253,15 @@ Warning `#F59E0B`, Danger `#DC2626`, Border `#E2E8F0`. Font: **Cairo** everywher
 
 ## 10. Roles
 
-| Capability | SUPER_ADMIN | OWNER | STUDENT |
-|---|:-:|:-:|:-:|
-| Manage owner account (create, rename, change phone, reset password) | ✓ | | |
-| Reset student device, list devices | ✓ | | |
-| Audit logs (read-only), system settings, system stats | ✓ | | |
-| Students, teachers, grades, subjects, content, uploads, access | ✓ | ✓ | |
-| Change own password | ✓ | ✓ | ✓ |
-| Change own name/phone | | ✗ (admin does it) | |
-| Browse catalog, play authorized videos, open authorized files | | | ✓ |
+| Capability                                                          | SUPER_ADMIN |       OWNER       | STUDENT |
+| ------------------------------------------------------------------- | :---------: | :---------------: | :-----: |
+| Manage owner account (create, rename, change phone, reset password) |      ✓      |                   |         |
+| Reset student device, list devices                                  |      ✓      |                   |         |
+| Audit logs (read-only), system settings, system stats               |      ✓      |                   |         |
+| Students, teachers, grades, subjects, content, uploads, access      |      ✓      |         ✓         |         |
+| Change own password                                                 |      ✓      |         ✓         |    ✓    |
+| Change own name/phone                                               |             | ✗ (admin does it) |         |
+| Browse catalog, play authorized videos, open authorized files       |             |                   |    ✓    |
 
 ---
 
@@ -276,15 +278,15 @@ Warning `#F59E0B`, Danger `#DC2626`, Border `#E2E8F0`. Font: **Cairo** everywher
 
 ## 12. Implementation phases
 
-| Phase | Scope | Exit criteria |
-|---|---|---|
-| 0 | Workspace analysis, this document | ✓ |
-| 1 | Foundation: projects, lint/format, env, git | lint + typecheck pass everywhere |
-| 2 | Database: schema, migration, seed | migrate + seed on MariaDB; restore test |
-| 3 | Auth: portals, refresh rotation, sessions, device binding | auth test suite green |
-| 4–5 | Admin + owner APIs and dashboards | API tests + dashboard tests/builds green |
-| 6 | Flutter app | analyze + tests + `build apk` green |
-| 7 | Media: chunked upload, worker, HLS-AES, playback, files, offline | real FFmpeg pipeline test green |
-| 8 | Security test suite (see spec §90) | all green |
-| 9 | Full test/lint/build sweep | zero errors |
-| 10 | Production: Docker, Nginx, TLS, backups, monitoring docs | documented, backup restore tested ✓ |
+| Phase | Scope                                                            | Exit criteria                            |
+| ----- | ---------------------------------------------------------------- | ---------------------------------------- |
+| 0     | Workspace analysis, this document                                | ✓                                        |
+| 1     | Foundation: projects, lint/format, env, git                      | lint + typecheck pass everywhere         |
+| 2     | Database: schema, migration, seed                                | migrate + seed on MariaDB; restore test  |
+| 3     | Auth: portals, refresh rotation, sessions, device binding        | auth test suite green                    |
+| 4–5   | Admin + owner APIs and dashboards                                | API tests + dashboard tests/builds green |
+| 6     | Flutter app                                                      | analyze + tests + `build apk` green      |
+| 7     | Media: chunked upload, worker, HLS-AES, playback, files, offline | real FFmpeg pipeline test green          |
+| 8     | Security test suite (see spec §90)                               | all green                                |
+| 9     | Full test/lint/build sweep                                       | zero errors                              |
+| 10    | Production: Docker, Nginx, TLS, backups, monitoring docs         | documented, backup restore tested ✓      |

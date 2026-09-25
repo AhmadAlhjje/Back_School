@@ -9,10 +9,11 @@ import { prisma } from '../../core/database/prisma.js';
 export const settingsSchema = z.object({
   instituteName: z.string().trim().min(1).max(120).default('المعهد التعليمي'),
   institutePhone: z.string().trim().max(20).nullable().default(null),
-  studentSelfRegistration: z.boolean().default(false),
-  watermarkEnabled: z.boolean().default(true),
+  // Students can create their own account from the app (the super admin can turn it off).
+  studentSelfRegistration: z.boolean().default(true),
   offlineDownloadsEnabled: z.boolean().default(true),
-  offlineLicenseDays: z.number().int().min(1).max(90).default(14),
+  // How long a downloaded video stays playable offline (renewed by downloading again).
+  offlineLicenseDays: z.number().int().min(1).max(365).default(365),
 });
 
 export type SystemSettings = z.infer<typeof settingsSchema>;

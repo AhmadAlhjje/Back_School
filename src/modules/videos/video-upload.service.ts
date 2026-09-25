@@ -148,7 +148,12 @@ export async function getUploadStatus(videoId: string) {
  * Streams one chunk to disk, enforcing its exact expected size. `source` is the request body
  * (or any stream, e.g. the demo seeder); `declaredLength` is the Content-Length when known.
  */
-export async function receiveChunk(videoId: string, index: number, source: Readable, declaredLength?: number) {
+export async function receiveChunk(
+  videoId: string,
+  index: number,
+  source: Readable,
+  declaredLength?: number,
+) {
   const job = await activeUploadJob(videoId);
   if (!Number.isInteger(index) || index < 0 || index >= job.totalChunks) {
     throw new AppError('VALIDATION_ERROR', { details: { reason: 'CHUNK_INDEX_OUT_OF_RANGE' } });

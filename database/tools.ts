@@ -1,7 +1,11 @@
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import mariadb from 'mariadb';
-import { buildDatabaseUrl, DATABASE_NAME_PATTERN, type DatabaseSettings } from '../src/config/database-url.js';
+import {
+  buildDatabaseUrl,
+  DATABASE_NAME_PATTERN,
+  type DatabaseSettings,
+} from '../src/config/database-url.js';
 
 /**
  * Database helpers used by the CLI (database/cli.ts) and the test setup. They read the DB_*

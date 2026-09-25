@@ -5,12 +5,12 @@ troubleshooting for the whole platform.
 
 ## Quality gates (must pass before any merge)
 
-| Project | Commands (inside the project folder) |
-|---|---|
-| backend | `npm run lint` · `npm run typecheck` · `npm test` · `npm run build` |
-| institute_dashboard | `npm run lint` · `npm run typecheck` · `npm test` · `npm run build` |
-| super_admin_web | `npm run lint` · `npm run typecheck` · `npm test` · `npm run build` |
-| flutter_app | `dart run build_runner build` · `flutter analyze` · `flutter test` · `flutter build apk` |
+| Project             | Commands (inside the project folder)                                                     |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| backend             | `npm run lint` · `npm run typecheck` · `npm test` · `npm run build`                      |
+| institute_dashboard | `npm run lint` · `npm run typecheck` · `npm test` · `npm run build`                      |
+| super_admin_web     | `npm run lint` · `npm run typecheck` · `npm test` · `npm run build`                      |
+| flutter_app         | `dart run build_runner build` · `flutter analyze` · `flutter test` · `flutter build apk` |
 
 Formatting: Prettier (single quotes, trailing commas, width 120) for TS/TSX; `dart format
 --line-length 120` for Dart. LF line endings everywhere (`.gitattributes`).
@@ -87,15 +87,15 @@ expired tokens) are covered by the automated suite.
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| `npm run dev`: "MySQL is not reachable" | Start MySQL from the XAMPP Control Panel; check `DB_HOST` / `DB_PORT` |
-| `npm run dev`: "MySQL refused user" | Check `DB_USERNAME` / `DB_PASSWORD` in `backend/.env` (XAMPP: `root`, empty) |
-| Uploaded video stays "جاري الرفع" | FFmpeg missing (`npm run dev` prints a warning) or, in production, the worker is not running |
-| Production: requests that queue jobs hang | Redis is not reachable (BullMQ waits for it); check `REDIS_URL` and `/health/ready` |
-| App: "تعذر الاتصال بالخادم" on a phone | Backend not running, or the phone was plugged in after the build: run `flutter run` again (it re-applies `adb reverse`) or `adb reverse tcp:4000 tcp:4000` |
+| Symptom                                                                                                                            | Fix                                                                                                                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`: "MySQL is not reachable"                                                                                            | Start MySQL from the XAMPP Control Panel; check `DB_HOST` / `DB_PORT`                                                                                                              |
+| `npm run dev`: "MySQL refused user"                                                                                                | Check `DB_USERNAME` / `DB_PASSWORD` in `backend/.env` (XAMPP: `root`, empty)                                                                                                       |
+| Uploaded video stays "جاري الرفع"                                                                                                  | FFmpeg missing (`npm run dev` prints a warning) or, in production, the worker is not running                                                                                       |
+| Production: requests that queue jobs hang                                                                                          | Redis is not reachable (BullMQ waits for it); check `REDIS_URL` and `/health/ready`                                                                                                |
+| App: "تعذر الاتصال بالخادم" on a phone                                                                                             | Backend not running, or the phone was plugged in after the build: run `flutter run` again (it re-applies `adb reverse`) or `adb reverse tcp:4000 tcp:4000`                         |
 | `Build was configured to prefer settings repositories over project repositories but repository 'maven' was added by settings file` | A global Gradle init script (`~/.gradle/init.d/*.gradle`) adds project repositories to every build, which Flutter's own Gradle build forbids. Use the mirror-friendly script below |
-| `NDK at …\ndk\<version> did not have a source.properties file` | An interrupted NDK download: delete that folder and build again |
+| `NDK at …\ndk\<version> did not have a source.properties file`                                                                     | An interrupted NDK download: delete that folder and build again                                                                                                                    |
 
 Mirror-friendly Gradle init script (keeps the Alibaba mirrors working with Flutter 3.4x+):
 

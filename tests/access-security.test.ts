@@ -265,10 +265,7 @@ describe('critical security (spec §90)', () => {
   it('audit logs are append-only in the database itself', async () => {
     const owner = await staff('OWNER');
     const learner = await student();
-    await api()
-      .post(`/api/v1/students/${learner.userId}/disable`)
-      .set(authHeaders(owner))
-      .expect(200);
+    await api().post(`/api/v1/students/${learner.userId}/disable`).set(authHeaders(owner)).expect(200);
     const entry = await prisma.auditLog.findFirstOrThrow({ where: { actorId: owner.userId } });
 
     await expect(

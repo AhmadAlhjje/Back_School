@@ -24,7 +24,10 @@ export async function startEmbeddedWorker(): Promise<{ stop: () => Promise<void>
   queues.maintenance.process((data) => runMaintenance(data.task));
 
   const timers = MAINTENANCE_SCHEDULE.map(({ task, everyMs }) =>
-    setInterval(() => queues.maintenance.add(`${task}-${Date.now()}`, { task }, { attempts: 1, backoffMs: 0 }), everyMs),
+    setInterval(
+      () => queues.maintenance.add(`${task}-${Date.now()}`, { task }, { attempts: 1, backoffMs: 0 }),
+      everyMs,
+    ),
   );
 
   // Uploads that were queued or being processed when the process stopped are resumed now.

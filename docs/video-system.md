@@ -8,11 +8,11 @@ From the owner's upload to a student watching (online or offline). Code:
 
 What the dashboards show is deliberately simple:
 
-| Shown | Internal |
-|---|---|
+| Shown                         | Internal                                                              |
+| ----------------------------- | --------------------------------------------------------------------- |
 | **جاري الرفع X%** (uploading) | chunks arriving (`UploadJob.UPLOADING`), then `QUEUED` / `PROCESSING` |
-| **جاهز** (ready) | `Video.READY` |
-| **فشل** (failed) + retry | `Video.FAILED` with a stored reason |
+| **جاهز** (ready)              | `Video.READY`                                                         |
+| **فشل** (failed) + retry      | `Video.FAILED` with a stored reason                                   |
 
 Students only ever see `READY`, non-archived videos under open subject + teacher.
 
@@ -64,7 +64,7 @@ cancels abandoned uploads, removes orphan temp files, and purges expired auth/of
 App ── POST /student/videos/:id/playback ──► API
         checks: token → session alive → device bound → student active →
                 subject+teacher access → nothing archived → READY
-     ◄── { manifestUrl: /media/videos/:id/master.m3u8?token=…, expiresAt, watermark }
+     ◄── { manifestUrl: /media/videos/:id/master.m3u8?token=…, expiresAt }
 
 Player ── master.m3u8?token ──► API (rewrites variant URLs with the same token)
        ── 720p/index.m3u8?token ──► API (rewrites segment URLs + key URI with the token)
@@ -84,8 +84,10 @@ Player ── master.m3u8?token ──► API (rewrites variant URLs with the sa
 ```
 App ── POST /student/videos/:id/offline-license ──► API (settings.offlineDownloadsEnabled,
                                                      same access checks, device-bound license,
-                                                     expires after offlineLicenseDays)
-     ◄── { licenseId, expiresAt, renditions: [{height, playlistUrl?token}] }
+                                                     expires after offlineLicenseDays —
+                                                     default 365 = one year, maximum 365)
+     ◄── { licenseId, expiresAt, path: {subject, teacher, topic, session},
+           renditions: [{height, playlistUrl?token}] }
 App downloads: the ~360p playlist, the key (once), every encrypted segment
 App stores:   segments as served (still encrypted) in app-private storage,
               the key only in Keychain/Keystore, a playlist rewritten to local names
@@ -94,24 +96,29 @@ Playback:     loopback HTTP server on 127.0.0.1:<random>/<random nonce>/ serving
 Sync:         GET /student/offline-licenses when online → local copies not listed are deleted
 ```
 
+The app has no separate downloads screen: a downloaded video stays in its place inside its
+session (marked "على الجهاز" and played from the device). Without a connection the home screen
+lists the downloads grouped by subject and teacher, using the stored `path`.
+
 Revocation paths: owner closes access, super admin resets the device, license expiry, student
 deletes the download — all remove the license server-side; the app purges on the next sync and
 refuses expired copies even offline.
 
 ## 6. Player protection (app)
 
-Moving watermark (name + phone, repositioned every few seconds), `FLAG_SECURE` on Android,
+`FLAG_SECURE` and no audio capture by other apps on Android (recordings are black and silent;
+Android 15+ stops the video while recording),
 video hidden during screen recording/mirroring on iOS, screenshot notice on iOS, wakelock only
 while playing, no background playback. See [security.md](security.md) §4 for limits.
 
 ## 7. Tuning
 
-| Setting | Effect |
-|---|---|
-| `FFMPEG_PRESET` | `veryfast` default; `faster/fast/medium` = smaller files, more CPU time |
-| `HLS_RENDITIONS` | fewer renditions = faster processing, less storage |
-| `VIDEO_WORKER_CONCURRENCY`, `WORKER_CPUS` | parallelism vs. API responsiveness |
-| `KEEP_ORIGINAL_VIDEOS` | keep sources for future re-encodes (doubles storage) |
+| Setting                                   | Effect                                                                  |
+| ----------------------------------------- | ----------------------------------------------------------------------- |
+| `FFMPEG_PRESET`                           | `veryfast` default; `faster/fast/medium` = smaller files, more CPU time |
+| `HLS_RENDITIONS`                          | fewer renditions = faster processing, less storage                      |
+| `VIDEO_WORKER_CONCURRENCY`, `WORKER_CPUS` | parallelism vs. API responsiveness                                      |
+| `KEEP_ORIGINAL_VIDEOS`                    | keep sources for future re-encodes (doubles storage)                    |
 
 Storage and processing time depend on the source and the CPU; estimate them by uploading one
 typical lesson and reading `du -sh` of its `videos/<id>` folder and the job duration in the worker

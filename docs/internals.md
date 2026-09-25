@@ -26,14 +26,14 @@ OpenAPI document and a test asserting every route has explicit access.
 Each feature in `src/modules/<feature>` owns its routes, service, DTO mappers and
 (where useful) repository. Cross-cutting rules live in shared services:
 
-| Module | Responsibility |
-|---|---|
-| `auth` | Portals, login, refresh rotation, sessions, device binding, password change |
-| `access` | Access policy (`assertVideoAccess`, `assertFileAccess`, tree view) and grants |
-| `catalog`, `grades`, `subjects`, `teachers`, `topics`, `sessions` | Content hierarchy, ordering, archive/restore |
-| `videos`, `files` | Upload flows, metadata; `media` delivers bytes behind signed tokens |
-| `student-portal` | Read models for the app (lock state, search, offline licenses) |
-| `students`, `owners`, `devices`, `settings`, `audit`, `dashboard`, `notifications` | Administration |
+| Module                                                                             | Responsibility                                                                |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `auth`                                                                             | Portals, login, refresh rotation, sessions, device binding, password change   |
+| `access`                                                                           | Access policy (`assertVideoAccess`, `assertFileAccess`, tree view) and grants |
+| `catalog`, `grades`, `subjects`, `teachers`, `topics`, `sessions`                  | Content hierarchy, ordering, archive/restore                                  |
+| `videos`, `files`                                                                  | Upload flows, metadata; `media` delivers bytes behind signed tokens           |
+| `student-portal`                                                                   | Read models for the app (lock state, search, offline licenses)                |
+| `students`, `owners`, `devices`, `settings`, `audit`, `dashboard`, `notifications` | Administration                                                                |
 
 ## 3. Background work
 
@@ -46,11 +46,11 @@ Three queues, with the same handlers (`src/workers/handlers.ts`) in both modes:
   job-id de-duplication; uploads left `QUEUED`/`PROCESSING` by a restart are resumed from the
   database on startup.
 
-| Queue | Jobs |
-|---|---|
-| `video` | chunk assembly → ffprobe → FFmpeg HLS + AES-128 → atomic publish ([video-system.md](video-system.md)) |
+| Queue           | Jobs                                                                                                        |
+| --------------- | ----------------------------------------------------------------------------------------------------------- |
+| `video`         | chunk assembly → ffprobe → FFmpeg HLS + AES-128 → atomic publish ([video-system.md](video-system.md))       |
 | `notifications` | fan-out of a notification to its audience (all / grade / subject / teacher / selected students), in batches |
-| `maintenance` | scheduled: auth cleanup (6 h), stale uploads (1 h), offline licenses (12 h) |
+| `maintenance`   | scheduled: auth cleanup (6 h), stale uploads (1 h), offline licenses (12 h)                                 |
 
 Jobs are idempotent (keyed by id) so retries and re-queues are safe. SIGTERM stops taking new
 jobs and waits for the running ones.
