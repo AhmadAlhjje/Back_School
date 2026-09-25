@@ -3,7 +3,7 @@
 # Backend image (build context: this folder), used by docker-compose.yml — run
 # `docker compose up -d --build` rather than building by hand.
 #
-#   target runtime: API (node dist/server.js, port 6000) and video worker (node dist/workers/index.js)
+#   target runtime: API (node dist/server.js, port 6003) and video worker (node dist/workers/index.js)
 #   target tools:   database migrations and seeders (npm run db:migrate / db:seed / admin:create)
 
 ARG NODE_IMAGE=node:22-bookworm-slim
@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --ignore-scripts --no
 # ─── Runtime: API / worker ────────────────────────────────────────────────────
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \
-    PORT=6000 \
+    PORT=6003 \
     STORAGE_PATH=/var/lib/edu/storage \
     FFMPEG_PATH=/usr/bin/ffmpeg \
     FFPROBE_PATH=/usr/bin/ffprobe
@@ -51,9 +51,9 @@ COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./package.json
 USER node
-EXPOSE 6000
+EXPOSE 6003
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||6000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||6003)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "dist/server.js"]
 

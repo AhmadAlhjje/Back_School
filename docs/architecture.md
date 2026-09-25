@@ -37,7 +37,7 @@ TanStack Query 5, Tailwind CSS 4, Vitest 4.
                  │ Flutter student app │   │ institute_dashboard │   │ super_admin_web  │
                  │ (Android / iOS)     │   │ (React, OWNER)      │   │ (React, ADMIN)   │
                  └─────────┬──────────┘   └─────────┬──────────┘   └────────┬─────────┘
-                           │ :6000 (JSON + HLS)      │ :6001                   │ :6002
+                           │ :6003 (JSON + HLS)      │ :6001                   │ :6002
                            │                ┌─────────┴──────────┐   ┌────────┴─────────┐
                            │                │ Nginx: site + /api │   │ Nginx: site + /api│
                            │                └─────────┬──────────┘   └────────┬─────────┘

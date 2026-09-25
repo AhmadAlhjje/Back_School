@@ -63,7 +63,7 @@ limit and expose that. Widevine/FairPlay DRM can be added later behind the same 
 
 ## 5. Transport and web
 
-- Current VPS setup: plain HTTP on the server's IP (ports 6000–6002) until a domain is set
+- Current VPS setup: plain HTTP on the server's IP (ports 6001–6003) until a domain is set
   up — move to HTTPS as soon as possible ([deployment.md](deployment.md) §7). Android release
   builds allow cleartext only to the API host in `.env` (when it is `http://`) and loopback;
   iOS ATS allows only local networking (iOS builds need an `https://` API).

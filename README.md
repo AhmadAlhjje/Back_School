@@ -26,7 +26,7 @@ npm run dev
 
 ## الرفع على السيرفر (VPS) بـ Docker
 
-كل شيء داخل Docker: قاعدة البيانات، التهجير، الـ API على المنفذ **6000**، معالج الفيديو، Redis،
+كل شيء داخل Docker: قاعدة البيانات، التهجير، الـ API على المنفذ **6003**، معالج الفيديو، Redis،
 والنسخ الاحتياطي اليومي. داخل مجلد `backend` على السيرفر:
 
 ```bash
@@ -88,7 +88,7 @@ database/            schema.prisma · migrations/ · seeders/ · scripts/ (نس�
 tests/               اختبارات تكامل على MySQL حقيقية
 scripts/             e2e-flow.ts · create-super-admin.ts · app-live-setup.ts
 docker/              ملفات الرفع على VPS: init-env.sh، إعداد MariaDB، النسخ الاحتياطي
-docker-compose.yml   تشغيل الباك على السيرفر بأمر واحد (الـ API على 6000)
+docker-compose.yml   تشغيل الباك على السيرفر بأمر واحد (الـ API على 6003)
 docs/                التوثيق التفصيلي
 storage/             الفيديوهات والملفات (خاص، لا يُخدم مباشرة)
 ```
