@@ -8,12 +8,13 @@ src/generated/
 # On the server, .env is the production configuration (docker/init-env.sh).
 .env
 
-# Runtime data
-storage/
-storage-test/
-tests/.fixtures/
+# Runtime data — anchored with "/" so only these root folders are ignored,
+# never source folders with the same name (src/core/storage is code).
+/storage/
+/storage-test/
+/tests/.fixtures/
 # Database dumps written by the backup container on the server
-backups/
+/backups/
 
 *.log
 .DS_Store

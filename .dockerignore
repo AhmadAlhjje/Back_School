@@ -2,12 +2,12 @@
 node_modules
 dist
 coverage
-storage
-storage-test
+/storage
+/storage-test
 tests
 src/generated
 .env
 .env.*
 !.env.example
-backups
+/backups
 *.log
